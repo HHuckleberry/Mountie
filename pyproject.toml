@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mountie"
+version = "0.1.0"
+description = "A GUI for mounting and managing SMB/CIFS, AFP, NFS, SFTP, and WebDAV network shares, with theming that follows your desktop."
+readme = "README.md"
+license = { text = "GPL-3.0-only" }
+requires-python = ">=3.9"
+authors = [{ name = "tmccracken" }]
+classifiers = [
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: System :: Filesystems",
+]
+dependencies = [
+    "PyQt5",
+    "PyGObject",
+]
+
+[project.scripts]
+mountie = "mountie.app:main"
+
+[tool.setuptools]
+packages = ["mountie"]

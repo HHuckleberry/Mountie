@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Mountie
+Comment=Mount and manage SMB/CIFS, AFP, NFS, SFTP, and WebDAV network shares
+Exec=mountie
+Icon=io.github.HHuckleberry.Mountie
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=network;share;mount;smb;cifs;samba;nfs;afp;sftp;webdav;nas;
+StartupNotify=true
+StartupWMClass=mountie
