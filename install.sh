@@ -7,6 +7,7 @@ VENV_DIR="${MOUNTIE_VENV:-$HOME/.local/share/mountie/venv}"
 APP_ID="io.github.HHuckleberry.Mountie"
 APPS_DIR="$HOME/.local/share/applications"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
+METAINFO_DIR="$HOME/.local/share/metainfo"
 DESKTOP_SRC="$REPO_DIR/data/$APP_ID.desktop"
 DESKTOP_DST="$APPS_DIR/$APP_ID.desktop"
 BIN_PATH="$VENV_DIR/bin/mountie"
@@ -35,6 +36,11 @@ cp "$REPO_DIR/data/$APP_ID.svg" "$ICON_DIR/$APP_ID.svg"
 # so the launcher entry works regardless of the desktop session's PATH.
 mkdir -p "$APPS_DIR"
 sed "s|^Exec=.*|Exec=$BIN_PATH|" "$DESKTOP_SRC" > "$DESKTOP_DST"
+
+# Lets software centres list the app locally, and is the same file Flathub
+# reads for the store listing.
+mkdir -p "$METAINFO_DIR"
+cp "$REPO_DIR/data/$APP_ID.metainfo.xml" "$METAINFO_DIR/$APP_ID.metainfo.xml"
 
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -qtf "$HOME/.local/share/icons/hicolor" 2>/dev/null || true

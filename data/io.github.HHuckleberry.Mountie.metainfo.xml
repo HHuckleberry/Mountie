@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.HHuckleberry.Mountie</id>
+
+  <name>Mountie</name>
+  <summary>Mount and manage network shares</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+
+  <developer id="io.github.hhuckleberry">
+    <name>HHuckleberry</name>
+  </developer>
+
+  <description>
+    <p>
+      Mountie keeps your network shares in one place and mounts them with a
+      single toggle. It handles SMB/CIFS, AFP, NFS, SFTP, FTP and WebDAV
+      through GVfs, so no administrator rights are needed and nothing has to
+      be added to fstab.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Add, edit and remove shares for any host and protocol GVfs supports</li>
+      <li>Mount and unmount with one click, with status shown for each share</li>
+      <li>Passwords are stored in the system keyring, never on disk in plain text</li>
+      <li>Each mounted share gets a short, stable path such as ~/Shares/Photos, instead of the long generated GVfs location</li>
+      <li>Light and dark themes, following the desktop's own preference and accent color by default</li>
+    </ul>
+    <p>
+      Mountie works on any desktop that provides GVfs and a secret service,
+      including COSMIC, GNOME and KDE Plasma.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.HHuckleberry.Mountie.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/HHuckleberry/Mountie/v0.1.0/data/screenshots/main-window.png</image>
+      <caption>Every configured share with its connection status and local path</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/HHuckleberry/Mountie/v0.1.0/data/screenshots/add-share.png</image>
+      <caption>Adding a share takes a protocol, host, path and optional credentials</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/HHuckleberry/Mountie/v0.1.0/data/screenshots/light-theme.png</image>
+      <caption>The interface follows your desktop's light or dark preference</caption>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/HHuckleberry/Mountie</url>
+  <url type="bugtracker">https://github.com/HHuckleberry/Mountie/issues</url>
+  <url type="vcs-browser">https://github.com/HHuckleberry/Mountie</url>
+
+  <categories>
+    <category>Network</category>
+    <category>FileTransfer</category>
+  </categories>
+
+  <keywords>
+    <keyword>network</keyword>
+    <keyword>share</keyword>
+    <keyword>mount</keyword>
+    <keyword>smb</keyword>
+    <keyword>samba</keyword>
+    <keyword>nfs</keyword>
+    <keyword>sftp</keyword>
+    <keyword>webdav</keyword>
+    <keyword>nas</keyword>
+  </keywords>
+
+  <!-- No children: every OARS category is "none" for this app. -->
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-08-11">
+      <description>
+        <p>First release.</p>
+        <ul>
+          <li>Mount and unmount SMB/CIFS, AFP, NFS, SFTP, FTP and WebDAV shares</li>
+          <li>Credentials stored in the system keyring</li>
+          <li>Short, stable local paths for mounted shares</li>
+          <li>System, light and dark themes</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>
