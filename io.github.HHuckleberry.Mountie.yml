@@ -6,6 +6,20 @@ base: com.riverbankcomputing.PyQt.BaseApp
 base-version: '5.15-25.08'
 command: mountie
 
+# Applies to every module's build. Modules install Python packages into
+# /app via "pip3 install --prefix=${FLATPAK_DEST}", but that alone doesn't
+# make them importable during the build: the build's python3 is the SDK's
+# own interpreter (verified: org.kde.Sdk//5.15-25.08 ships Python 3.13.11,
+# with setuptools 80.9.0 already importable system-wide, well past the
+# problem version), and it only searches /app's site-packages if told to.
+# Without this, the setuptools module below installs successfully but is
+# never actually seen, and every later module silently falls back to the
+# SDK's own too-new setuptools - which is exactly what happened before this
+# was added: the pin looked like it should have worked and didn't.
+build-options:
+  env:
+    PYTHONPATH: /app/lib/python3.13/site-packages
+
 finish-args:
   # Windowing + theming. --socket=wayland covers COSMIC/Wayland; the X11
   # fallback and --share=ipc are still needed for XWayland apps and for Qt's
