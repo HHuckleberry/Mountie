@@ -51,14 +51,36 @@ modules:
   # gobject-introspection release may fix this upstream and let this module
   # be dropped - not verified here.) This also satisfies the mountie
   # module's own setuptools>=61 requirement below, so one pin covers both.
+  #
+  # Two more things had to be true before this actually worked, both found
+  # by reproducing the exact build command outside flatpak-builder via
+  # `flatpak run --command=... org.kde.Sdk//5.15-25.08`, rather than
+  # guessing again after two failed attempts:
+  #
+  #  1. Unpinned "setuptools" as the install target is a no-op: pip checks
+  #     whether the requirement is already satisfied by anything visible on
+  #     sys.path BEFORE it looks in --find-links, and 80.9.0 always is
+  #     visible (it's what the SDK's own python3 ships). Confirmed directly
+  #     - it printed "Requirement already satisfied: setuptools ... (80.9.0)"
+  #     and installed nothing, no error, silently. Needed an exact pin,
+  #     "setuptools==69.5.1", plus --force-reinstall --ignore-installed so
+  #     pip doesn't just re-confirm 80.9.0 satisfies "some setuptools".
+  #
+  #  2. With that fixed, installing the sdist tarball failed differently:
+  #     building it from source invokes setuptools' own PEP 517 build
+  #     backend, which needs the "wheel" package - unavailable with
+  #     --no-index. Switched the source to setuptools' prebuilt wheel
+  #     instead, which pip can install directly with no build step, sidestepping
+  #     the problem rather than solving it.
   - name: setuptools
     buildsystem: simple
     build-commands:
-      - pip3 install --no-index --find-links=. --prefix=${FLATPAK_DEST} setuptools
+      - pip3 install --no-index --find-links=. --prefix=${FLATPAK_DEST}
+          --force-reinstall --ignore-installed "setuptools==69.5.1"
     sources:
       - type: file
-        url: https://files.pythonhosted.org/packages/d6/4f/b10f707e14ef7de524fe1f8988a294fb262a29c9b5b12275c7e188864aed/setuptools-69.5.1.tar.gz
-        sha256: 6c1fccdac05a97e598fb0ae3bbed5904ccb317337a51139dcd51453611bbb987
+        url: https://files.pythonhosted.org/packages/f7/29/13965af254e3373bceae8fb9a0e6ea0d0e571171b80d6646932131d6439b/setuptools-69.5.1-py3-none-any.whl
+        sha256: c636ac361bc47580504644275c9ad802c50415c7522212252c033bd15f301f32
 
   # --- PyGObject + the GLib/Gio/Secret bindings ---
   # The KDE runtime has Qt but not PyGObject; the GNOME runtime has PyGObject
