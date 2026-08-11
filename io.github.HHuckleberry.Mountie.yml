@@ -82,6 +82,23 @@ modules:
         url: https://files.pythonhosted.org/packages/f7/29/13965af254e3373bceae8fb9a0e6ea0d0e571171b80d6646932131d6439b/setuptools-69.5.1-py3-none-any.whl
         sha256: c636ac361bc47580504644275c9ad802c50415c7522212252c033bd15f301f32
 
+  # Modern setuptools doesn't bundle the ability to build a wheel itself -
+  # "bdist_wheel" is registered by the separate wheel package. Without it,
+  # setuptools.build_meta gets through metadata generation fine and then
+  # fails with "error: invalid command 'bdist_wheel'". Found and fixed by
+  # building a throwaway pyproject.toml package with the identical
+  # [build-system] setuptools>=61.0 shape mountie itself uses, offline,
+  # against this exact SDK - not inferred.
+  - name: wheel
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --no-deps --find-links=. --prefix=${FLATPAK_DEST}
+          --force-reinstall --ignore-installed "wheel==0.43.0"
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/7d/cd/d7460c9a869b16c3dd4e1e403cce337df165368c71d6af229a74699622ce/wheel-0.43.0-py3-none-any.whl
+        sha256: 55c570405f142630c6b9f72fe09d9b67cf1477fcf543ae5b8dcb1f5b7377da81
+
   # --- PyGObject + the GLib/Gio/Secret bindings ---
   # The KDE runtime has Qt but not PyGObject; the GNOME runtime has PyGObject
   # but not Qt. This app needs both, so PyGObject is built as a module here.
@@ -178,9 +195,18 @@ modules:
   - name: mountie
     buildsystem: simple
     build-commands:
-      # setuptools (built as its own module above) covers pyproject.toml's
-      # build-system requirement here too.
-      - pip3 install --no-index --find-links=. --prefix=${FLATPAK_DEST} .
+      # --no-build-isolation is required, not optional: without it pip
+      # creates an isolated build environment that ignores PYTHONPATH
+      # entirely (by design, so a build isn't contaminated by whatever's
+      # ambient) and tries to fetch setuptools>=61.0 fresh, which fails
+      # offline exactly like the earlier gobject-introspection/pygobject
+      # failures did. Confirmed directly, including that plain
+      # --no-build-isolation alone isn't enough either: metadata generation
+      # then failed with "invalid command 'bdist_wheel'" until the wheel
+      # module above was also added, since setuptools doesn't bundle that
+      # command itself.
+      - pip3 install --no-index --no-build-isolation --find-links=.
+          --prefix=${FLATPAK_DEST} .
       - install -Dm644 data/io.github.HHuckleberry.Mountie.desktop
           ${FLATPAK_DEST}/share/applications/io.github.HHuckleberry.Mountie.desktop
       - install -Dm644 data/io.github.HHuckleberry.Mountie.svg
