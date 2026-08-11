@@ -85,8 +85,8 @@ modules:
   # --- PyGObject + the GLib/Gio/Secret bindings ---
   # The KDE runtime has Qt but not PyGObject; the GNOME runtime has PyGObject
   # but not Qt. This app needs both, so PyGObject is built as a module here.
-  # cairo dev headers are needed for pycairo, one of pygobject's own build
-  # deps for its cairo integration - not used directly by Mountie.
+  # (Its cairo/GTK integration is explicitly disabled below, in the
+  # python3-pygobject module - Mountie doesn't use it.)
   - name: gobject-introspection
     buildsystem: meson
     sources:
@@ -105,10 +105,70 @@ modules:
         url: https://download.gnome.org/sources/libsecret/0.21/libsecret-0.21.4.tar.xz
         sha256: 163d08d783be6d4ab9a979ceb5a4fecbc1d9660d3c34168c581301cd53912b20
 
+  # PyGObject ships no wheel, only an sdist, so it has to be built - and its
+  # pyproject.toml build backend is meson-python, not setuptools. With
+  # --no-index, pip's normal PEP 517 build isolation (an ephemeral venv it
+  # tries to populate over the network) can't be used, so these two modules
+  # install meson-python and its one missing dependency directly into
+  # /app first, and the pygobject module below uses --no-build-isolation to
+  # build against them instead.
+  #
+  # Checked directly in the SDK (flatpak run --command=python3
+  # org.kde.Sdk//5.15-25.08) which of meson-python's own dependencies were
+  # already there: mesonbuild and packaging both were; pyproject_metadata
+  # and mesonpy were not. Only those two needed adding.
+  #
+  # Both installs need --no-deps: mesonbuild and packaging ARE importable in
+  # the SDK (confirmed directly) but were installed by the distro's package
+  # manager, not pip, so they carry no pip-recognizable install metadata.
+  # Without --no-deps, pip's resolver doesn't credit them as satisfying
+  # anything and tries to fetch its own copies, which fails offline -
+  # reproduced this exact failure before adding the flag.
+  - name: pyproject-metadata
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --no-deps --find-links=. --prefix=${FLATPAK_DEST}
+          --force-reinstall --ignore-installed "pyproject-metadata==0.9.1"
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/7e/b1/8e63033b259e0a4e40dd1ec4a9fee17718016845048b43a36ec67d62e6fe/pyproject_metadata-0.9.1-py3-none-any.whl
+        sha256: ee5efde548c3ed9b75a354fc319d5afd25e9585fa918a34f62f904cc731973ad
+
+  - name: meson-python
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --no-deps --find-links=. --prefix=${FLATPAK_DEST}
+          --force-reinstall --ignore-installed "meson-python==0.18.0"
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/28/58/66db620a8a7ccb32633de9f403fe49f1b63c68ca94e5c340ec5cceeb9821/meson_python-0.18.0-py3-none-any.whl
+        sha256: 3b0fe051551cc238f5febb873247c0949cd60ded556efa130aa57021804868e2
+
+  # pycairo (PyGObject's cairo/GTK-drawing integration) is unbuildable here -
+  # confirmed missing from the SDK entirely, not just a metadata-recognition
+  # gap like above - but Mountie only ever does
+  # `from gi.repository import Gio, GLib, Secret`, never touches cairo or
+  # GTK widgets, so it isn't needed. Checked PyGObject's own meson_options.txt
+  # from its source tarball: pycairo is an explicit meson feature
+  # (option('pycairo', type: 'feature', value: 'auto', ...)), so
+  # -Dpycairo=disabled skips building that integration. --no-deps is then
+  # required too: PyGObject's pyproject.toml declares "pycairo>=1.16"
+  # unconditionally in [project.dependencies], regardless of the meson
+  # option, so without --no-deps pip would still try to resolve it after a
+  # successful build and fail the same way as the meson-python deps above.
+  #
+  # This module is inferred from PyGObject's own build configuration, not
+  # build-tested end-to-end here (the full build needs headers this
+  # environment doesn't have) - unlike the setuptools and meson-python
+  # fixes above, which were both verified directly before being written
+  # here.
   - name: python3-pygobject
     buildsystem: simple
     build-commands:
-      - pip3 install --no-index --find-links=. --prefix=${FLATPAK_DEST} pygobject
+      - pip3 install --no-index --no-build-isolation --no-deps --find-links=.
+          --config-settings=setup-args=-Dpycairo=disabled
+          --prefix=${FLATPAK_DEST} --force-reinstall --ignore-installed
+          "pygobject==3.56.3"
     sources:
       - type: file
         url: https://files.pythonhosted.org/packages/da/61/978c5fbca34f10a90df362502fbb5a005637909e7b5a0e9212349ea9d010/pygobject-3.56.3.tar.gz
