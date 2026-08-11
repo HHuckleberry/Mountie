@@ -1,0 +1,87 @@
+app-id: io.github.HHuckleberry.Mountie
+runtime: org.kde.Platform
+runtime-version: '5.15-25.08'
+sdk: org.kde.Sdk
+base: com.riverbankcomputing.PyQt.BaseApp
+base-version: '5.15-25.08'
+command: mountie
+
+finish-args:
+  # Windowing + theming. --socket=wayland covers COSMIC/Wayland; the X11
+  # fallback and --share=ipc are still needed for XWayland apps and for Qt's
+  # own IPC (shared memory segments for rendering).
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # No portal exists for GVfs mounts or libsecret, so both need explicit
+  # access. This is the main thing a Flathub reviewer will question - static
+  # permissions are supposed to be minimal, but there's no portal covering
+  # "mount a network share" (unlike open/save, which go through the file
+  # chooser portal instead of --filesystem).
+  - --talk-name=org.gtk.vfs.Daemon
+  - --talk-name=org.gtk.vfs.UDisks2VolumeMonitor
+  - --filesystem=xdg-run/gvfs
+  - --talk-name=org.freedesktop.secrets
+  # The settings portal (org.freedesktop.portal.Settings, used for
+  # light/dark + accent color) and org.freedesktop.portal.Desktop generally
+  # need no finish-args entry - portal access is always allowed.
+
+modules:
+  # --- PyGObject + the GLib/Gio/Secret bindings ---
+  # The KDE runtime has Qt but not PyGObject; the GNOME runtime has PyGObject
+  # but not Qt. This app needs both, so PyGObject is built as a module here.
+  # cairo dev headers are needed for pycairo, one of pygobject's own build
+  # deps for its cairo integration - not used directly by Mountie.
+  - name: gobject-introspection
+    buildsystem: meson
+    sources:
+      - type: archive
+        url: https://download.gnome.org/sources/gobject-introspection/1.80/gobject-introspection-1.80.1.tar.xz
+        sha256: a1df7c424e15bda1ab639c00e9051b9adf5cea1a9e512f8a603b53cd199bc6d8
+
+  - name: libsecret
+    buildsystem: meson
+    config-opts:
+      - -Dgtk_doc=false
+      - -Dvapi=false
+      - -Dmanpage=false
+    sources:
+      - type: archive
+        url: https://download.gnome.org/sources/libsecret/0.21/libsecret-0.21.4.tar.xz
+        sha256: 163d08d783be6d4ab9a979ceb5a4fecbc1d9660d3c34168c581301cd53912b20
+
+  - name: python3-pygobject
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --find-links=. --prefix=${FLATPAK_DEST} pygobject
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/da/61/978c5fbca34f10a90df362502fbb5a005637909e7b5a0e9212349ea9d010/pygobject-3.56.3.tar.gz
+        sha256: 12760e4a0e3d04b6eb95e06f7a27e362c826d567ea613373a92c003b6c70d2d6
+
+  # --- Mountie itself ---
+  - name: mountie
+    buildsystem: simple
+    build-commands:
+      # --no-index blocks network during build (required by Flathub), which
+      # means pip can't fetch setuptools for pyproject.toml's build backend
+      # unless it's already present. org.kde.Sdk's python3 normally has it
+      # preinstalled - if this step fails with "no module named setuptools"
+      # or similar, that assumption was wrong and setuptools needs adding
+      # as its own module above, the same way pygobject is built.
+      - pip3 install --no-index --find-links=. --prefix=${FLATPAK_DEST} .
+      - install -Dm644 data/io.github.HHuckleberry.Mountie.desktop
+          ${FLATPAK_DEST}/share/applications/io.github.HHuckleberry.Mountie.desktop
+      - install -Dm644 data/io.github.HHuckleberry.Mountie.svg
+          ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/io.github.HHuckleberry.Mountie.svg
+      - install -Dm644 data/io.github.HHuckleberry.Mountie.metainfo.xml
+          ${FLATPAK_DEST}/share/metainfo/io.github.HHuckleberry.Mountie.metainfo.xml
+    sources:
+      # Pinned to a tag AND its commit, not just the tag - GitHub's
+      # auto-generated tarball checksums have changed on GitHub's end before
+      # (a compression change once invalidated sha256 hashes across many
+      # Flathub manifests), but a commit-pinned git source can't drift.
+      - type: git
+        url: https://github.com/HHuckleberry/Mountie.git
+        tag: v0.1.0
+        commit: f68b64982e877690799c569fb9df55f981be9518
