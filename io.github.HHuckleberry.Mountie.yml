@@ -27,6 +27,25 @@ finish-args:
   # need no finish-args entry - portal access is always allowed.
 
 modules:
+  # setuptools has to go first and be pinned below 74. gobject-introspection
+  # 1.80.1's g-ir-scanner unconditionally does
+  # "from distutils.msvccompiler import MSVCCompiler" - real stdlib distutils
+  # is gone as of Python 3.12, so that import is only satisfied by
+  # setuptools' own vendored copy, and setuptools removed msvccompiler from
+  # that vendored copy at 74. Whatever setuptools org.kde.Sdk's python3
+  # ships is >=74, so this fails without the pin. (A newer
+  # gobject-introspection release may fix this upstream and let this module
+  # be dropped - not verified here.) This also satisfies the mountie
+  # module's own setuptools>=61 requirement below, so one pin covers both.
+  - name: setuptools
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --find-links=. --prefix=${FLATPAK_DEST} setuptools
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/d6/4f/b10f707e14ef7de524fe1f8988a294fb262a29c9b5b12275c7e188864aed/setuptools-69.5.1.tar.gz
+        sha256: 6c1fccdac05a97e598fb0ae3bbed5904ccb317337a51139dcd51453611bbb987
+
   # --- PyGObject + the GLib/Gio/Secret bindings ---
   # The KDE runtime has Qt but not PyGObject; the GNOME runtime has PyGObject
   # but not Qt. This app needs both, so PyGObject is built as a module here.
@@ -63,12 +82,8 @@ modules:
   - name: mountie
     buildsystem: simple
     build-commands:
-      # --no-index blocks network during build (required by Flathub), which
-      # means pip can't fetch setuptools for pyproject.toml's build backend
-      # unless it's already present. org.kde.Sdk's python3 normally has it
-      # preinstalled - if this step fails with "no module named setuptools"
-      # or similar, that assumption was wrong and setuptools needs adding
-      # as its own module above, the same way pygobject is built.
+      # setuptools (built as its own module above) covers pyproject.toml's
+      # build-system requirement here too.
       - pip3 install --no-index --find-links=. --prefix=${FLATPAK_DEST} .
       - install -Dm644 data/io.github.HHuckleberry.Mountie.desktop
           ${FLATPAK_DEST}/share/applications/io.github.HHuckleberry.Mountie.desktop
