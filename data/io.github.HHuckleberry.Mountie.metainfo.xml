@@ -75,6 +75,22 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.3" date="2026-08-11">
+      <description>
+        <p>Improved Flatpak integration, connection management and diagnostics.</p>
+        <ul>
+          <li>Show the installed version in the main window and About dialog</li>
+          <li>Add About, repository, issue-reporting and log-viewing tools</li>
+          <li>Preserve and recover share configuration across Flatpak updates</li>
+          <li>Add the GVfs client integration required to mount shares from Flatpak</li>
+          <li>Support optional SMB domains and workgroups</li>
+          <li>Prevent rejected credentials from leaving a connection frozen</li>
+          <li>Add a never-save-passwords mode with per-connection prompts</li>
+          <li>Discover and import network mounts created outside Mountie</li>
+          <li>Harden configuration, URI, link-path and duplicate-operation handling</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.2" date="2026-08-11">
       <description>
         <p>Improved reliability and a more maintainable application structure.</p>

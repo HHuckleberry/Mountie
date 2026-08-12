@@ -10,6 +10,26 @@ from mountie.settings import THEMES, THEME_SYSTEM
 from mountie.ui.visuals import APP_STYLESHEET, COSMIC_TOKENS, PALETTE_COLORS
 
 
+def initialize_icon_theme():
+    """Keep themed action icons available in minimal environments.
+
+    PyQt's Flatpak base app exposes only its built-in ``:/icons`` search path
+    even though the runtime ships complete icon themes under its XDG data
+    directories. Add those standard directories, then use the shipped Breeze
+    theme only when Qt has no usable desktop-selected theme.
+    """
+    search_paths = list(QtGui.QIcon.themeSearchPaths())
+    for data_dir in QtCore.QStandardPaths.standardLocations(
+            QtCore.QStandardPaths.GenericDataLocation):
+        icon_dir = f"{data_dir.rstrip('/')}/icons"
+        if icon_dir not in search_paths:
+            search_paths.append(icon_dir)
+    QtGui.QIcon.setThemeSearchPaths(search_paths)
+    QtGui.QIcon.setFallbackThemeName("breeze")
+    if QtGui.QIcon.themeName().lower() in ("", "hicolor"):
+        QtGui.QIcon.setThemeName("breeze")
+
+
 def is_dark_palette(widget):
     return widget.palette().color(QtGui.QPalette.Window).lightness() < 128
 
@@ -205,7 +225,6 @@ def icon_button(icon_names, tooltip):
     btn.setIconSize(QtCore.QSize(16, 16))
     btn.setToolTip(tooltip)
     btn.setAutoRaise(True)
-    btn.setCursor(QtCore.Qt.PointingHandCursor)
     btn.setProperty("class", "iconButton")
     # Remembered so the icon can be repainted when the theme changes.
     btn.setProperty("iconNames", list(icon_names))

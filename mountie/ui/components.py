@@ -17,7 +17,6 @@ class ToggleSwitch(QtWidgets.QAbstractButton):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setCheckable(True)
-        self.setCursor(QtCore.Qt.PointingHandCursor)
         self.setFixedSize(42, 24)
         self._offset = 3.0
         self._anim = QtCore.QPropertyAnimation(self, b"offset", self)
@@ -83,33 +82,47 @@ class StatusBadge(QtWidgets.QLabel):
 # -------------------------------------------------------------- add/edit ---
 
 class ShareDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None, existing=None, default_host=""):
+    def __init__(
+        self,
+        parent=None,
+        existing=None,
+        initial=None,
+        default_host="",
+        never_save_credentials=False,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Edit Share" if existing else "Add Share")
         self.existing = existing
+        source = existing or initial or {}
 
         form = QtWidgets.QFormLayout(self)
 
         self.protocol_combo = QtWidgets.QComboBox()
         for key, label in PROTOCOLS:
             self.protocol_combo.addItem(label, key)
-        current_protocol = existing.get("protocol", DEFAULT_PROTOCOL) if existing else DEFAULT_PROTOCOL
+        current_protocol = source.get("protocol", DEFAULT_PROTOCOL)
         self.protocol_combo.setCurrentIndex(max(0, self.protocol_combo.findData(current_protocol)))
 
-        self.label_edit = QtWidgets.QLineEdit(existing["label"] if existing else "")
-        self.host_edit = QtWidgets.QLineEdit(existing["host"] if existing else default_host)
-        self.share_edit = QtWidgets.QLineEdit(existing["share"] if existing else "")
-        self.user_edit = QtWidgets.QLineEdit(existing["username"] if existing else "")
+        self.label_edit = QtWidgets.QLineEdit(source.get("label", ""))
+        self.host_edit = QtWidgets.QLineEdit(source.get("host", default_host))
+        self.share_edit = QtWidgets.QLineEdit(source.get("share", ""))
+        self.domain_edit = QtWidgets.QLineEdit(source.get("domain", ""))
+        self.domain_edit.setPlaceholderText("Optional")
+        self.user_edit = QtWidgets.QLineEdit(source.get("username", ""))
         self.pass_edit = QtWidgets.QLineEdit()
         self.pass_edit.setEchoMode(QtWidgets.QLineEdit.Password)
         self.pass_edit.setPlaceholderText(
-            "(leave blank to keep current password)" if existing else ""
+            "Passwords are requested when connecting"
+            if never_save_credentials
+            else "(leave blank to keep current password)" if existing else ""
         )
+        self.pass_edit.setEnabled(not never_save_credentials)
 
         form.addRow("Protocol:", self.protocol_combo)
         form.addRow("Label:", self.label_edit)
         form.addRow("Host / IP:", self.host_edit)
         form.addRow("Share / path:", self.share_edit)
+        form.addRow("Domain / workgroup:", self.domain_edit)
         form.addRow("Username:", self.user_edit)
         form.addRow("Password:", self.pass_edit)
 
@@ -126,6 +139,7 @@ class ShareDialog(QtWidgets.QDialog):
             "label": self.label_edit.text().strip(),
             "host": self.host_edit.text().strip(),
             "share": self.share_edit.text().strip(),
+            "domain": self.domain_edit.text().strip(),
             "username": self.user_edit.text().strip(),
         }, self.pass_edit.text()
 
@@ -153,9 +167,11 @@ class ShareCard(QtWidgets.QFrame):
         text_col = QtWidgets.QVBoxLayout()
         text_col.setSpacing(2)
         self.label_lbl = QtWidgets.QLabel(cfg["label"])
+        self.label_lbl.setTextFormat(QtCore.Qt.PlainText)
         self.label_lbl.setObjectName("shareLabel")
         protocol = cfg.get("protocol", DEFAULT_PROTOCOL)
         self.target_lbl = QtWidgets.QLabel(f"{protocol}://{cfg['host']}/{cfg['share']}")
+        self.target_lbl.setTextFormat(QtCore.Qt.PlainText)
         self.target_lbl.setObjectName("shareTarget")
         text_col.addWidget(self.label_lbl)
         text_col.addWidget(self.target_lbl)
@@ -205,3 +221,46 @@ class ShareCard(QtWidgets.QFrame):
         self.toggle.setEnabled(enabled)
         self.edit_btn.setEnabled(enabled)
         self.delete_btn.setEnabled(enabled)
+
+
+class ExternalMountCard(QtWidgets.QFrame):
+    """Read-only row for a network mount managed outside Mountie."""
+
+    import_requested = QtCore.pyqtSignal(dict)
+
+    def __init__(self, connection):
+        super().__init__()
+        self.setObjectName("shareCard")
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(14, 10, 10, 10)
+        layout.setSpacing(12)
+        layout.addSpacing(42)
+
+        text_col = QtWidgets.QVBoxLayout()
+        text_col.setSpacing(2)
+        self.label_lbl = QtWidgets.QLabel(connection["name"])
+        self.label_lbl.setTextFormat(QtCore.Qt.PlainText)
+        self.label_lbl.setObjectName("shareLabel")
+        self.target_lbl = QtWidgets.QLabel(connection["uri"])
+        self.target_lbl.setTextFormat(QtCore.Qt.PlainText)
+        self.target_lbl.setObjectName("shareTarget")
+        text_col.addWidget(self.label_lbl)
+        text_col.addWidget(self.target_lbl)
+        layout.addLayout(text_col, 1)
+
+        self.badge = StatusBadge("external")
+        layout.addWidget(self.badge)
+        if connection.get("config"):
+            self.import_btn = QtWidgets.QPushButton("Import")
+            self.import_btn.setToolTip("Add this connection to Mountie")
+            self.import_btn.clicked.connect(
+                lambda: self.import_requested.emit(connection["config"].copy())
+            )
+            layout.addWidget(self.import_btn)
+        self.setToolTip("Mounted outside Mountie; shown here for visibility only")
+        self.refresh_theme()
+
+    def refresh_theme(self):
+        r, g, b = cosmic_tokens(self)["secondary"]
+        self.target_lbl.setStyleSheet(f"#shareTarget {{ color: rgb({r},{g},{b}); }}")
+        self.badge.set_status("external")

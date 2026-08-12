@@ -21,6 +21,7 @@ build-options:
     PYTHONPATH: /app/lib/python3.13/site-packages
 
 finish-args:
+  - --env=GIO_EXTRA_MODULES=/app/lib64/gio/modules
   # Windowing + theming. --socket=wayland covers COSMIC/Wayland; the X11
   # fallback and --share=ipc are still needed for XWayland apps and for Qt's
   # own IPC (shared memory segments for rendering).
@@ -32,10 +33,16 @@ finish-args:
   # permissions are supposed to be minimal, but there's no portal covering
   # "mount a network share" (unlike open/save, which go through the file
   # chooser portal instead of --filesystem).
-  - --talk-name=org.gtk.vfs.Daemon
+  - --talk-name=org.gtk.vfs.*
   - --talk-name=org.gtk.vfs.UDisks2VolumeMonitor
   - --filesystem=xdg-run/gvfs
+  # GVfs prefers its private peer socket and otherwise emits a warning before
+  # falling back to the session bus for every operation.
+  - --filesystem=xdg-run/gvfsd
   - --talk-name=org.freedesktop.secrets
+  # Read-only access lets the first Flatpak run migrate shares from a prior
+  # native installation. New writes use Flatpak's persistent XDG config dir.
+  - --filesystem=~/.config/mountie:ro
   # The settings portal (org.freedesktop.portal.Settings, used for
   # light/dark + accent color) and org.freedesktop.portal.Desktop generally
   # need no finish-args entry - portal access is always allowed.
@@ -121,6 +128,57 @@ modules:
       - type: archive
         url: https://download.gnome.org/sources/libsecret/0.21/libsecret-0.21.4.tar.xz
         sha256: 163d08d783be6d4ab9a979ceb5a4fecbc1d9660d3c34168c581301cd53912b20
+
+  # The KDE runtime does not include GVfs's GIO client module. Without it,
+  # Gio sees only its local VFS implementation and mount_enclosing_volume()
+  # fails with "volume doesn't implement mount" before reaching the host's
+  # GVfs daemon. Only the protocol-independent client libraries are retained;
+  # the host session continues to provide and run the actual GVfs backends.
+  - name: gvfs-client
+    buildsystem: meson
+    config-opts:
+      - -Dsystemduserunitdir=no
+      - -Dtmpfilesdir=no
+      - -Dadmin=false
+      - -Dafc=false
+      - -Dafp=false
+      - -Darchive=false
+      - -Dburn=false
+      - -Dcdda=false
+      - -Ddnssd=false
+      - -Dgoa=false
+      - -Dgoogle=false
+      - -Dgphoto2=false
+      - -Dhttp=false
+      - -Dmtp=false
+      - -Dnfs=false
+      - -Donedrive=false
+      - -Dsftp=false
+      - -Dsmb=false
+      - -Dudisks2=false
+      - -Dwsdd=false
+      - -Dbluray=false
+      - -Dfuse=false
+      - -Dgcr=false
+      - -Dgcrypt=false
+      - -Dgudev=false
+      - -Dkeyring=false
+      - -Dlogind=false
+      - -Dlibusb=false
+      - -Ddeprecated_apis=false
+      - -Dman=false
+    cleanup:
+      - /bin
+      - /include
+      - /lib/pkgconfig
+      - /libexec
+      - /share/dbus-1
+      - /share/glib-2.0
+      - /share/gvfs
+    sources:
+      - type: archive
+        url: https://download.gnome.org/sources/gvfs/1.54/gvfs-1.54.4.tar.xz
+        sha256: 0893305c8ae375414907813a9e4c9435f6eb78bcc2ac6baaddb9391ba5c5b9ba
 
   # PyGObject ships no wheel, only an sdist, so it has to be built - and its
   # pyproject.toml build backend is meson-python, not setuptools. With

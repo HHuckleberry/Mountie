@@ -50,6 +50,8 @@ STATUS_TOKEN_KEY = {
     "connection timed out": "negative",
     "unmount failed": "negative",
     "invalid share": "negative",
+    "backend unavailable": "negative",
+    "external": "neutral",
 }
 
 
@@ -85,6 +87,10 @@ QListWidget::item:selected {
 #headerTitle {
     font-size: 18px;
     font-weight: 700;
+}
+#versionLabel {
+    color: palette(placeholder-text);
+    font-size: 11px;
 }
 QPushButton#primaryButton {
     background: palette(highlight);

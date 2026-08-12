@@ -7,8 +7,9 @@ from gi.repository import GLib
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from mountie.logging_setup import configure_logging
 from mountie.settings import APP_ID
-from mountie.ui.theme import ThemeManager
+from mountie.ui.theme import ThemeManager, initialize_icon_theme
 from mountie.ui.window import MainWindow
 
 
@@ -25,6 +26,7 @@ def start_glib_pump(qt_app):
     qt_app._glib_pump_timer = timer
 
 def main():
+    configure_logging()
     # Both set before the QApplication so they're in place when the platform
     # plugin creates the first window.
     #
@@ -38,6 +40,7 @@ def main():
     QtWidgets.QApplication.setApplicationName("Mountie")
 
     app = QtWidgets.QApplication(sys.argv)
+    initialize_icon_theme()
     # Still worth setting: it's what X11/XWayland and the window's own title
     # bar use, where app_id doesn't apply.
     app.setWindowIcon(QtGui.QIcon.fromTheme(APP_ID))

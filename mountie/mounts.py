@@ -1,7 +1,8 @@
 import os
 import re
+import logging
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import gi
 
@@ -9,6 +10,88 @@ gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
 from mountie.settings import DEFAULT_LINK_DIR, DEFAULT_PROTOCOL, PROTOCOLS
+
+logger = logging.getLogger(__name__)
+
+NETWORK_SCHEMES = frozenset(key for key, _label in PROTOCOLS)
+
+
+def _safe_mount_uri(uri):
+    """Return a display-safe URI with userinfo, query, and fragment removed."""
+    try:
+        parts = urlsplit(uri)
+        hostname = parts.hostname
+        if not hostname:
+            return None
+        host = f"[{hostname}]" if ":" in hostname else hostname
+        if parts.port is not None:
+            host = f"{host}:{parts.port}"
+        return urlunsplit((parts.scheme.lower(), host, parts.path, "", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _mount_uri_key(uri):
+    safe_uri = _safe_mount_uri(uri)
+    if safe_uri is None:
+        return None
+    parts = urlsplit(safe_uri)
+    return (
+        parts.scheme.lower(),
+        parts.netloc.lower(),
+        unquote(parts.path).rstrip("/"),
+    )
+
+
+def external_network_mounts(configured_shares, mounts=None):
+    """Describe mounted network locations not already configured in Mountie."""
+    configured = set()
+    for share in configured_shares:
+        try:
+            configured.add(_mount_uri_key(share_uri(share)))
+        except ValueError:
+            continue
+
+    if mounts is None:
+        mounts = Gio.VolumeMonitor.get().get_mounts()
+    found = []
+    seen = set()
+    for mount in mounts:
+        try:
+            uri = mount.get_default_location().get_uri()
+            key = _mount_uri_key(uri)
+        except (AttributeError, GLib.Error):
+            continue
+        if key is None or key[0] not in NETWORK_SCHEMES:
+            continue
+        if key in configured or key in seen:
+            continue
+        safe_uri = _safe_mount_uri(uri)
+        if safe_uri is None:
+            continue
+        seen.add(key)
+        try:
+            name = mount.get_name()
+        except (AttributeError, GLib.Error):
+            name = ""
+        display_name = str(name or safe_uri)
+        parts = urlsplit(safe_uri)
+        share_path = unquote(parts.path).strip("/")
+        connection = {"name": display_name, "uri": safe_uri}
+        if share_path:
+            # Passwords are deliberately absent. A username embedded in an
+            # SFTP/FTP URI is safe to prefill separately, never in display.
+            original_parts = urlsplit(uri)
+            connection["config"] = {
+                "protocol": parts.scheme.lower(),
+                "label": display_name,
+                "host": parts.netloc,
+                "share": share_path,
+                "domain": "",
+                "username": unquote(original_parts.username or ""),
+            }
+        found.append(connection)
+    return sorted(found, key=lambda item: (item["name"].casefold(), item["uri"]))
 
 
 def validate_share(config):
@@ -68,8 +151,17 @@ def link_dir(config):
 
 def link_name(share):
     """Return a filesystem-safe directory name derived from a share label."""
-    raw = (share.get("label") or share.get("share") or share["id"]).strip()
-    return re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("-.") or share["id"]
+    raw = (share.get("label") or share.get("share") or "").strip()
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("-.")
+    if name:
+        return name
+    # The ID comes from persisted configuration and may have been edited by
+    # hand. Sanitize it too; returning it raw here permits labels such as
+    # ".." plus an ID like "../../target" to escape the link directory.
+    fallback = re.sub(
+        r"[^A-Za-z0-9._-]+", "-", str(share.get("id", ""))
+    ).strip("-.")
+    return fallback or "share"
 
 
 def link_path(config, share):
@@ -144,15 +236,41 @@ def prune_links(config):
 
 
 class CredMountOperation(Gio.MountOperation):
-    def __init__(self, username, password):
+    def __init__(self, username, password, domain=""):
         super().__init__()
         self._username = username or ""
         self._password = password or ""
+        self._domain = domain or ""
+        self._credential_prompts = 0
+        self.credentials_rejected = False
         self.connect("ask-password", self._on_ask_password)
 
     def _on_ask_password(self, operation, message, default_user, default_domain, flags):
+        self._credential_prompts += 1
+        logger.info(
+            "GVfs requested credentials (attempt %d): username=%s domain=%s "
+            "password=%s anonymous=%s",
+            self._credential_prompts,
+            bool(flags & Gio.AskPasswordFlags.NEED_USERNAME),
+            bool(flags & Gio.AskPasswordFlags.NEED_DOMAIN),
+            bool(flags & Gio.AskPasswordFlags.NEED_PASSWORD),
+            bool(flags & Gio.AskPasswordFlags.ANONYMOUS_SUPPORTED),
+        )
+        # A second prompt means the server rejected the credentials just
+        # submitted. Re-sending them makes GVfs ask again indefinitely.
+        if self._credential_prompts > 1:
+            self.credentials_rejected = True
+            logger.warning("GVfs rejected the supplied credentials")
+            operation.reply(Gio.MountOperationResult.ABORTED)
+            return
+        if flags & Gio.AskPasswordFlags.ANONYMOUS_SUPPORTED:
+            operation.set_anonymous(False)
         if flags & Gio.AskPasswordFlags.NEED_USERNAME:
             operation.set_username(self._username)
+        if flags & Gio.AskPasswordFlags.NEED_DOMAIN:
+            # Blank is intentional: shares outside a domain/workgroup should
+            # continue to use the server/backend's suggested default.
+            operation.set_domain(self._domain or default_domain or "")
         if flags & Gio.AskPasswordFlags.NEED_PASSWORD:
             operation.set_password(self._password)
         operation.set_password_save(Gio.PasswordSave.NEVER)
@@ -179,6 +297,7 @@ def classify_mount_error(error):
         (Gio.IOErrorEnum.NETWORK_UNREACHABLE, "network unreachable", "Network unreachable"),
         (Gio.IOErrorEnum.HOST_UNREACHABLE, "host unreachable", "Host unreachable"),
         (Gio.IOErrorEnum.TIMED_OUT, "connection timed out", "Connection timed out"),
+        (Gio.IOErrorEnum.NOT_SUPPORTED, "backend unavailable", "GVfs backend unavailable"),
     )
     for code, status, title in categories:
         if error.matches(io_error, code):
@@ -204,15 +323,27 @@ def mount_share(config, password, on_done):
     except ValueError as error:
         on_done(False, "invalid share", f"Invalid share: {error}")
         return
-    operation = CredMountOperation(config.get("username", ""), password)
+    logger.info("Mounting %s", gfile.get_uri())
+    operation = CredMountOperation(
+        config.get("username", ""), password, config.get("domain", "")
+    )
 
     def callback(source, result):
         try:
             source.mount_enclosing_volume_finish(result)
             on_done(True, None, None)
         except GLib.Error as error:
-            status, title = classify_mount_error(error)
-            on_done(False, status, f"{title}: {error.message}")
+            logger.warning("Mount failed for %s: %s", gfile.get_uri(), error.message)
+            if operation.credentials_rejected:
+                on_done(
+                    False,
+                    "authentication failed",
+                    "Authentication failed: The server rejected the saved credentials. "
+                    "Edit the share and enter the correct username and password.",
+                )
+            else:
+                status, title = classify_mount_error(error)
+                on_done(False, status, f"{title}: {error.message}")
 
     gfile.mount_enclosing_volume(
         Gio.MountMountFlags.NONE, operation, None, callback
@@ -227,12 +358,14 @@ def unmount_share(config, on_done):
         message = error.message if isinstance(error, GLib.Error) else str(error)
         on_done(False, "unmount failed", f"Could not disconnect: {message}")
         return
+    logger.info("Unmounting %s", gfile.get_uri())
 
     def callback(source, result):
         try:
             source.unmount_with_operation_finish(result)
             on_done(True, None, None)
         except GLib.Error as error:
+            logger.warning("Unmount failed for %s: %s", gfile.get_uri(), error.message)
             on_done(False, "unmount failed", f"Could not disconnect: {error.message}")
 
     mount.unmount_with_operation(Gio.MountUnmountFlags.NONE, None, None, callback)

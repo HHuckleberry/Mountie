@@ -12,7 +12,9 @@ alike.
 - **One-click toggle** to mount/unmount each share (no `sudo`/`pkexec` needed
   — mounts land in the per-user GVfs mount namespace via `gio`).
 - **Credentials saved to your system keyring** (via `libsecret`/GNOME
-  Keyring), never written to disk in plaintext.
+  Keyring), never written to disk in plaintext. Enable **Never save
+  passwords** in About and diagnostics to remove stored passwords and ask for
+  them only when connecting.
 - **System / Light / Dark themes**, selectable from the appearance button
   and remembered between runs. The default, System, follows the desktop's
   light/dark preference live via the XDG settings portal — the same source
@@ -88,12 +90,54 @@ sudo mkdir -p /mnt/shares && sudo chown "$USER" /mnt/shares
 Then set `"link_dir": "/mnt/shares"`. Set `"links_enabled": false` to turn
 the feature off.
 
+Mountie follows the XDG directory specification. Native installations store
+settings at `~/.config/mountie/config.json`; Flatpak keeps them in its
+persistent application-data directory. On its first Flatpak launch, Mountie
+imports an existing native configuration automatically. It also maintains a
+`config.json.backup` file and recovers from it if the primary file is damaged.
+
 ## Usage
 
 Run `mountie`, then **Add Share** with a label, host, share/path, and
 optional credentials. Flip the toggle to mount or unmount. Status badges
 show connected/disconnected/error state; use the refresh button to
-re-check all shares against what's actually mounted.
+re-check all shares against what's actually mounted. Refresh also shows
+network connections created by another application as read-only **External**
+rows. Use **Import** to adopt an eligible connection as a normal Mountie share.
+Mountie can recover the target and sometimes its username, but another
+application's password is never exposed, so you may need to enter it again.
+
+For SMB shares joined to Active Directory or a Windows workgroup, enter the
+domain/workgroup separately from the username. Leave the domain/workgroup
+blank for standalone servers, local server accounts, and protocols that do
+not use one.
+
+The About and diagnostics button in the header shows the installed version,
+repository and issue links, configuration locations, and a viewer for the
+rotating application log.
+
+## Testing
+
+Run the complete test suite with:
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+The isolated abuse-case suite uses no real network shares or keyring entries:
+
+```sh
+python3 -m unittest tests.test_abuse_cases -v
+```
+
+To check one already-configured share against its real server and saved
+keyring entry without exposing credentials or directory names:
+
+```sh
+python3 scripts/test_configured_share.py "Share label"
+```
+
+The check preserves the share's original mount state.
 
 ## TODO
 
@@ -114,7 +158,7 @@ re-check all shares against what's actually mounted.
 
 ## Before publishing a fork
 
-`APP_ID` in `mountie/app.py` is the single source of truth for the
+`APP_ID` in `mountie/settings.py` is the single source of truth for the
 libsecret schema, the desktop entry, and the icon name. If you fork this,
 change it to a reverse-DNS ID you control — for a GitHub-hosted fork that's
 `io.github.<account>.<repo>`, which must resolve to a reachable repository —

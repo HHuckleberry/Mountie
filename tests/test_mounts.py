@@ -1,6 +1,24 @@
 import unittest
+from unittest import mock
 
-from mountie.mounts import link_name_collision, share_uri, validate_share
+from gi.repository import Gio
+
+from mountie.mounts import (
+    CredMountOperation,
+    external_network_mounts,
+    link_name_collision,
+    share_uri,
+    validate_share,
+)
+
+
+def mounted(name, uri):
+    location = mock.Mock()
+    location.get_uri.return_value = uri
+    value = mock.Mock()
+    value.get_name.return_value = name
+    value.get_default_location.return_value = location
+    return value
 
 
 def share(**overrides):
@@ -59,6 +77,82 @@ class LinkCollisionTests(unittest.TestCase):
         candidate = share(id="existing", label="Media Share")
         config = {"shares": [candidate]}
         self.assertFalse(link_name_collision(config, candidate, "existing"))
+
+
+class ExternalMountTests(unittest.TestCase):
+    def test_finds_only_unconfigured_network_mounts(self):
+        mounts = [
+            mounted("Configured", "smb://files.example.com/Team%20Docs"),
+            mounted("Other", "sftp://alice@other.example/home/alice"),
+            mounted("Local disk", "file:///mnt/storage"),
+        ]
+        result = external_network_mounts([share()], mounts)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "Other")
+        self.assertEqual(result[0]["uri"], "sftp://other.example/home/alice")
+        self.assertEqual(result[0]["config"]["username"], "alice")
+        self.assertEqual(result[0]["config"]["share"], "home/alice")
+
+    def test_removes_password_query_and_fragment_from_display_uri(self):
+        mounts = [mounted(
+            "Private",
+            "sftp://alice:secret@host.example/home?token=secret#section",
+        )]
+        result = external_network_mounts([], mounts)
+        self.assertEqual(result[0]["uri"], "sftp://host.example/home")
+        self.assertNotIn("secret", repr(result))
+
+    def test_mount_root_without_share_path_is_view_only(self):
+        result = external_network_mounts([], [mounted("Server", "ftp://server/")])
+        self.assertNotIn("config", result[0])
+
+    def test_deduplicates_equivalent_mounts(self):
+        mounts = [
+            mounted("One", "smb://server/data/"),
+            mounted("Two", "smb://SERVER/data"),
+        ]
+        self.assertEqual(len(external_network_mounts([], mounts)), 1)
+
+
+class CredentialPromptTests(unittest.TestCase):
+    def test_configured_domain_is_sent_separately(self):
+        mount_operation = CredMountOperation("user", "password", "EXAMPLE")
+        operation = mock.Mock()
+        flags = Gio.AskPasswordFlags.NEED_USERNAME | Gio.AskPasswordFlags.NEED_DOMAIN
+
+        mount_operation._on_ask_password(
+            operation, "", "suggested-workgroup", "ignored", flags
+        )
+
+        operation.set_username.assert_called_once_with("user")
+        operation.set_domain.assert_called_once_with("EXAMPLE")
+
+    def test_blank_domain_uses_backend_default(self):
+        mount_operation = CredMountOperation("local-user", "password")
+        operation = mock.Mock()
+
+        mount_operation._on_ask_password(
+            operation,
+            "",
+            "local-user",
+            "WORKGROUP",
+            Gio.AskPasswordFlags.NEED_DOMAIN,
+        )
+
+        operation.set_domain.assert_called_once_with("WORKGROUP")
+
+    def test_repeated_prompt_aborts_instead_of_looping(self):
+        mount_operation = CredMountOperation("user", "password")
+        operation = mock.Mock()
+        flags = Gio.AskPasswordFlags.NEED_USERNAME | Gio.AskPasswordFlags.NEED_PASSWORD
+
+        mount_operation._on_ask_password(operation, "", "", "", flags)
+        operation.reply.assert_called_once_with(Gio.MountOperationResult.HANDLED)
+
+        operation.reset_mock()
+        mount_operation._on_ask_password(operation, "", "", "", flags)
+        operation.reply.assert_called_once_with(Gio.MountOperationResult.ABORTED)
+        self.assertTrue(mount_operation.credentials_rejected)
 
 
 if __name__ == "__main__":

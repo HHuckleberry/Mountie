@@ -4,6 +4,7 @@ import uuid
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from mountie import __version__
 from mountie.credentials import (
     CredentialError,
     clear_password,
@@ -11,6 +12,7 @@ from mountie.credentials import (
     set_password,
 )
 from mountie.mounts import (
+    external_network_mounts,
     is_mounted,
     link_name_collision,
     mount_share,
@@ -21,14 +23,15 @@ from mountie.mounts import (
     validate_share,
 )
 from mountie.settings import ConfigError, THEMES, default_config, load_config, save_config
-from mountie.ui.components import Bridge, ShareCard, ShareDialog
+from mountie.ui.about import AboutDialog
+from mountie.ui.components import Bridge, ExternalMountCard, ShareCard, ShareDialog
 from mountie.ui.theme import appearance_icon, icon_button, retint_icon_button, tinted_icon
 
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, theme):
         super().__init__()
-        self.setWindowTitle("Mountie")
+        self.setWindowTitle(f"Mountie {__version__}")
         self.resize(560, 420)
 
         try:
@@ -44,6 +47,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.bridge = Bridge()
         self.bridge.done.connect(self._on_op_done)
         self.cards = {}  # share_id -> ShareCard
+        self.external_cards = []
+        self._active_operations = {}  # share_id -> "mount" or "unmount"
 
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
@@ -55,6 +60,10 @@ class MainWindow(QtWidgets.QMainWindow):
         title = QtWidgets.QLabel("Network Shares")
         title.setObjectName("headerTitle")
         header.addWidget(title)
+        version = QtWidgets.QLabel(f"v{__version__}")
+        version.setObjectName("versionLabel")
+        version.setToolTip("Installed Mountie version")
+        header.addWidget(version)
         header.addStretch()
 
         refresh_btn = icon_button(["view-refresh-symbolic", "view-refresh"], "Refresh status")
@@ -63,6 +72,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         header.addWidget(self._build_theme_button())
 
+        about_btn = icon_button(
+            ["help-about-symbolic", "help-about", "preferences-system-symbolic"],
+            "About and diagnostics",
+        )
+        about_btn.clicked.connect(self.show_about)
+        header.addWidget(about_btn)
+
         # Sits on the highlight color, so it tints against that, not the window.
         self.add_btn = add_btn = QtWidgets.QPushButton(" Add Share")
         add_btn.setIcon(tinted_icon(
@@ -70,7 +86,6 @@ class MainWindow(QtWidgets.QMainWindow):
             "list-add-symbolic", "list-add",
         ))
         add_btn.setObjectName("primaryButton")
-        add_btn.setCursor(QtCore.Qt.PointingHandCursor)
         add_btn.clicked.connect(self.add_share)
         header.addWidget(add_btn)
         layout.addLayout(header)
@@ -85,6 +100,41 @@ class MainWindow(QtWidgets.QMainWindow):
         self.theme.changed.connect(self._on_theme_changed)
 
     # ---- theme ----
+
+    def show_about(self):
+        dialog = AboutDialog(
+            len(self.cfg["shares"]),
+            self.cfg.get("never_save_credentials", False),
+            self,
+        )
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            self.set_never_save_credentials(dialog.never_save.isChecked())
+
+    def set_never_save_credentials(self, enabled):
+        enabled = bool(enabled)
+        previous = self.cfg.get("never_save_credentials", False)
+        if enabled == previous:
+            return
+        self.cfg["never_save_credentials"] = enabled
+        if not self._save_config():
+            self.cfg["never_save_credentials"] = previous
+            return
+        if not enabled:
+            return
+
+        failures = []
+        for share in self.cfg["shares"]:
+            try:
+                clear_password(share["id"])
+            except CredentialError as error:
+                failures.append(f"{share['label']}: {error}")
+        if failures:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Could not remove every password",
+                "Mountie will not use or save passwords while this setting is enabled.\n\n"
+                + "\n".join(failures),
+            )
 
     def _build_theme_button(self):
         btn = icon_button([], "Appearance")
@@ -140,6 +190,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # both have to be told to recompute.
         for card in self.cards.values():
             card.refresh_theme()
+        for card in self.external_cards:
+            card.refresh_theme()
         for btn in self.findChildren(QtWidgets.QToolButton):
             retint_icon_button(btn)
         self.add_btn.setIcon(tinted_icon(
@@ -154,8 +206,45 @@ class MainWindow(QtWidgets.QMainWindow):
             prune_links(self.cfg)
         self.list.clear()
         self.cards = {}
+        self.external_cards = []
         for cfg in self.cfg["shares"]:
             self._add_card(cfg, query_status)
+        if query_status:
+            for connection in external_network_mounts(self.cfg["shares"]):
+                self._add_external_card(connection)
+
+    def _add_external_card(self, connection):
+        card = ExternalMountCard(connection)
+        card.import_requested.connect(self.import_external)
+        item = QtWidgets.QListWidgetItem(self.list)
+        item.setSizeHint(card.sizeHint())
+        self.list.addItem(item)
+        self.list.setItemWidget(item, card)
+        self.external_cards.append(card)
+
+    def import_external(self, initial):
+        dialog = ShareDialog(
+            self,
+            initial=initial,
+            never_save_credentials=self.cfg.get("never_save_credentials", False),
+        )
+        dialog.setWindowTitle("Import External Share")
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        values, password = dialog.values()
+        if not self._validate_values(values):
+            return
+        values["id"] = uuid.uuid4().hex
+        self.cfg["shares"].append(values)
+        if not self._save_config():
+            self.cfg["shares"].remove(values)
+            return
+        if password and not self.cfg.get("never_save_credentials", False):
+            try:
+                set_password(values["id"], password)
+            except CredentialError as error:
+                QtWidgets.QMessageBox.critical(self, "Keyring error", str(error))
+        self.reload_list(query_status=True)
 
     def _add_card(self, cfg, query_status):
         card = ShareCard(cfg)
@@ -180,6 +269,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # connect only after initial state is set, so setChecked() above
         # never itself triggers a mount/unmount action
         card.toggle.toggled.connect(lambda checked, cid=cfg["id"]: self.on_toggle(cid, checked))
+        active_operation = self._active_operations.get(cfg["id"])
+        if active_operation:
+            card.set_operations_enabled(False)
+            card.badge.set_status(
+                "connecting..." if active_operation == "mount" else "disconnecting..."
+            )
 
     def refresh_all_status(self):
         self.reload_list(query_status=True)
@@ -197,21 +292,26 @@ class MainWindow(QtWidgets.QMainWindow):
         cfg = self._cfg_for_id(share_id)
         if cfg is None or card is None:
             return
+        if share_id in self._active_operations:
+            return
 
+        self._active_operations[share_id] = "mount" if checked else "unmount"
         card.set_enabled_toggle(False)
 
         if checked:
             card.badge.set_status("connecting...")
-            try:
-                password = get_password(share_id) or ""
-            except CredentialError as error:
-                card.set_enabled_toggle(True)
-                card.toggle.blockSignals(True)
-                card.toggle.setChecked(False)
-                card.toggle.blockSignals(False)
-                card.badge.set_status("keyring error")
-                QtWidgets.QMessageBox.critical(self, "Keyring error", str(error))
-                return
+            if self.cfg.get("never_save_credentials", False):
+                password = self._prompt_for_password(cfg)
+                if password is None:
+                    self._cancel_pending_toggle(share_id, card)
+                    return
+            else:
+                try:
+                    password = get_password(share_id) or ""
+                except CredentialError as error:
+                    self._cancel_pending_toggle(share_id, card, "keyring error")
+                    QtWidgets.QMessageBox.critical(self, "Keyring error", str(error))
+                    return
             mount_share(cfg, password,
                          lambda ok, status, err, sid=share_id:
                          self.bridge.done.emit(sid, ok, status or "", err or ""))
@@ -221,7 +321,29 @@ class MainWindow(QtWidgets.QMainWindow):
                           lambda ok, status, err, sid=share_id:
                           self.bridge.done.emit(sid, ok, status or "", err or ""))
 
+    def _prompt_for_password(self, share):
+        # An entirely blank identity represents an anonymous/passwordless
+        # share, so it should remain one-click even in never-save mode.
+        if not share.get("username") and not share.get("domain"):
+            return ""
+        password, accepted = QtWidgets.QInputDialog.getText(
+            self,
+            "Password required",
+            f"Password for {share['label']}:",
+            QtWidgets.QLineEdit.Password,
+        )
+        return password if accepted else None
+
+    def _cancel_pending_toggle(self, share_id, card, status="disconnected"):
+        self._active_operations.pop(share_id, None)
+        card.set_enabled_toggle(True)
+        card.toggle.blockSignals(True)
+        card.toggle.setChecked(False)
+        card.toggle.blockSignals(False)
+        card.badge.set_status(status)
+
     def _on_op_done(self, share_id, success, status, error):
+        self._active_operations.pop(share_id, None)
         card = self.cards.get(share_id)
         if card is None:
             return
@@ -248,7 +370,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def add_share(self):
         last_host = self.cfg["shares"][-1]["host"] if self.cfg["shares"] else ""
-        dlg = ShareDialog(self, default_host=last_host)
+        dlg = ShareDialog(
+            self,
+            default_host=last_host,
+            never_save_credentials=self.cfg.get("never_save_credentials", False),
+        )
         if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return
         values, password = dlg.values()
@@ -259,7 +385,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self._save_config():
             self.cfg["shares"].remove(values)
             return
-        if password:
+        if password and not self.cfg.get("never_save_credentials", False):
             try:
                 set_password(values["id"], password)
             except CredentialError as error:
@@ -270,7 +396,11 @@ class MainWindow(QtWidgets.QMainWindow):
         cfg = self._cfg_for_id(share_id)
         if cfg is None:
             return
-        dlg = ShareDialog(self, existing=cfg)
+        dlg = ShareDialog(
+            self,
+            existing=cfg,
+            never_save_credentials=self.cfg.get("never_save_credentials", False),
+        )
         if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return
         values, password = dlg.values()
@@ -311,7 +441,7 @@ class MainWindow(QtWidgets.QMainWindow):
             cfg.update(old_values)
             self.reload_list(query_status=True)
             return
-        if password:
+        if password and not self.cfg.get("never_save_credentials", False):
             try:
                 set_password(share_id, password)
             except CredentialError as error:
