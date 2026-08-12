@@ -221,3 +221,4 @@ modules:
       - type: git
         url: https://github.com/HHuckleberry/Mountie.git
         tag: v0.1.2
+        commit: 5ea1f1cb1da7e850b2c73cdf4d2fb68c93410b59
