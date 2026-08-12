@@ -6,7 +6,13 @@ from pathlib import Path
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mountie.mounts import share_uri
-from mountie.settings import DEFAULT_PROTOCOL, PROTOCOLS
+from mountie.settings import (
+    CREDENTIAL_POLICIES,
+    CREDENTIAL_USE_GLOBAL,
+    DEFAULT_PROTOCOL,
+    DISCONNECT_OPTIONS,
+    PROTOCOLS,
+)
 from mountie.ui.theme import cosmic_tokens, icon_button
 from mountie.ui.visuals import STATUS_TOKEN_KEY
 
@@ -88,12 +94,14 @@ class ShareDialog(QtWidgets.QDialog):
         existing=None,
         initial=None,
         default_host="",
-        never_save_credentials=False,
+        global_credential_policy="ask",
+        credential_profiles=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Edit Share" if existing else "Add Share")
         self.existing = existing
         source = existing or initial or {}
+        self.credential_profiles = credential_profiles or []
 
         form = QtWidgets.QFormLayout(self)
 
@@ -109,14 +117,49 @@ class ShareDialog(QtWidgets.QDialog):
         self.domain_edit = QtWidgets.QLineEdit(source.get("domain", ""))
         self.domain_edit.setPlaceholderText("Optional")
         self.user_edit = QtWidgets.QLineEdit(source.get("username", ""))
+        self.profile_combo = QtWidgets.QComboBox()
+        self.profile_combo.addItem("This share only", "")
+        for profile in self.credential_profiles:
+            self.profile_combo.addItem(profile["label"], profile["id"])
+        self.profile_combo.setCurrentIndex(max(
+            0, self.profile_combo.findData(source.get("credential_profile_id", ""))
+        ))
+        self.new_profile_name = QtWidgets.QLineEdit()
+        self.new_profile_name.setPlaceholderText("Optional reusable profile name")
         self.pass_edit = QtWidgets.QLineEdit()
         self.pass_edit.setEchoMode(QtWidgets.QLineEdit.Password)
-        self.pass_edit.setPlaceholderText(
-            "Passwords are requested when connecting"
-            if never_save_credentials
-            else "(leave blank to keep current password)" if existing else ""
+        self.credential_policy_combo = QtWidgets.QComboBox()
+        self.credential_policy_combo.addItem(
+            f"Use global ({dict(CREDENTIAL_POLICIES)[global_credential_policy]})",
+            CREDENTIAL_USE_GLOBAL,
         )
-        self.pass_edit.setEnabled(not never_save_credentials)
+        for key, policy_label in CREDENTIAL_POLICIES:
+            self.credential_policy_combo.addItem(policy_label, key)
+        current_policy = source.get("credential_policy", CREDENTIAL_USE_GLOBAL)
+        self.credential_policy_combo.setCurrentIndex(max(
+            0, self.credential_policy_combo.findData(current_policy)
+        ))
+        self.credential_policy_combo.currentIndexChanged.connect(
+            lambda: self._update_password_hint(global_credential_policy)
+        )
+        self.profile_combo.currentIndexChanged.connect(
+            lambda: self._profile_changed(global_credential_policy)
+        )
+        self.disconnect_combo = QtWidgets.QComboBox()
+        for minutes, disconnect_label in DISCONNECT_OPTIONS:
+            self.disconnect_combo.addItem(disconnect_label, minutes)
+        current_minutes = source.get("disconnect_after_minutes", 0)
+        index = self.disconnect_combo.findData(current_minutes)
+        if index < 0 and current_minutes:
+            self.disconnect_combo.addItem(
+                f"After {current_minutes} minutes", current_minutes
+            )
+            index = self.disconnect_combo.count() - 1
+        self.disconnect_combo.setCurrentIndex(max(0, index))
+        self.disconnect_on_lock = QtWidgets.QCheckBox("Disconnect when screen locks")
+        self.disconnect_on_lock.setChecked(source.get("disconnect_on_lock", False))
+        self.disconnect_on_suspend = QtWidgets.QCheckBox("Disconnect before suspend")
+        self.disconnect_on_suspend.setChecked(source.get("disconnect_on_suspend", False))
 
         form.addRow("Protocol:", self.protocol_combo)
         form.addRow("Label:", self.label_edit)
@@ -124,7 +167,15 @@ class ShareDialog(QtWidgets.QDialog):
         form.addRow("Share / path:", self.share_edit)
         form.addRow("Domain / workgroup:", self.domain_edit)
         form.addRow("Username:", self.user_edit)
+        form.addRow("Credential profile:", self.profile_combo)
+        form.addRow("Save identity as profile:", self.new_profile_name)
+        form.addRow("Credential policy:", self.credential_policy_combo)
         form.addRow("Password:", self.pass_edit)
+        form.addRow("Auto-disconnect:", self.disconnect_combo)
+        form.addRow("", self.disconnect_on_lock)
+        form.addRow("", self.disconnect_on_suspend)
+        self._update_password_hint(global_credential_policy)
+        self._profile_changed(global_credential_policy)
 
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
@@ -141,7 +192,46 @@ class ShareDialog(QtWidgets.QDialog):
             "share": self.share_edit.text().strip(),
             "domain": self.domain_edit.text().strip(),
             "username": self.user_edit.text().strip(),
+            "credential_profile_id": self.profile_combo.currentData(),
+            "credential_policy": self.credential_policy_combo.currentData(),
+            "disconnect_after_minutes": self.disconnect_combo.currentData(),
+            "disconnect_on_lock": self.disconnect_on_lock.isChecked(),
+            "disconnect_on_suspend": self.disconnect_on_suspend.isChecked(),
+            "_new_profile_name": self.new_profile_name.text().strip(),
         }, self.pass_edit.text()
+
+    def _update_password_hint(self, global_policy):
+        policy = self.credential_policy_combo.currentData()
+        if policy == CREDENTIAL_USE_GLOBAL:
+            policy = global_policy
+        if policy == "ask":
+            self.pass_edit.clear()
+            self.pass_edit.setEnabled(False)
+            self.pass_edit.setPlaceholderText("Requested when connecting")
+        else:
+            self.pass_edit.setEnabled(True)
+            self.pass_edit.setPlaceholderText(
+                "(leave blank to keep current password)" if self.existing else ""
+            )
+
+    def _profile_changed(self, global_policy):
+        profile_id = self.profile_combo.currentData()
+        profile = next(
+            (item for item in self.credential_profiles if item["id"] == profile_id),
+            None,
+        )
+        using_profile = profile is not None
+        for field in (self.domain_edit, self.user_edit, self.credential_policy_combo):
+            field.setEnabled(not using_profile)
+        self.new_profile_name.setEnabled(not using_profile)
+        if profile is not None:
+            self.domain_edit.setText(profile["domain"])
+            self.user_edit.setText(profile["username"])
+            policy = profile.get("credential_policy", CREDENTIAL_USE_GLOBAL)
+            self.credential_policy_combo.setCurrentIndex(max(
+                0, self.credential_policy_combo.findData(policy)
+            ))
+        self._update_password_hint(global_policy)
 
 
 # ------------------------------------------------------------ main window --

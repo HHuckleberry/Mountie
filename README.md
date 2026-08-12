@@ -11,10 +11,18 @@ alike.
 - **Add / edit / remove shares** for any host and protocol GVfs supports.
 - **One-click toggle** to mount/unmount each share (no `sudo`/`pkexec` needed
   — mounts land in the per-user GVfs mount namespace via `gio`).
-- **Credentials saved to your system keyring** (via `libsecret`/GNOME
-  Keyring), never written to disk in plaintext. Enable **Never save
-  passwords** in About and diagnostics to remove stored passwords and ask for
-  them only when connecting.
+- **Security-first credential policies**: new installations ask every time by
+  default. You can instead remember passwords until logout or save them in the
+  desktop's system keyring. Passwords are never written to Mountie's config or
+  logs.
+- **Reusable credential profiles** for people who use one account across
+  several shares, while still allowing every share to use a different account
+  or no account at all.
+- **Connection controls for larger setups**: search, Connect All, Disconnect
+  All, live GVfs status updates, and import of eligible mounts created outside
+  Mountie.
+- **Automatic disconnect policies** per share: after a fixed connected time,
+  when the screen locks, or when the system begins suspending.
 - **System / Light / Dark themes**, selectable from the appearance button
   and remembered between runs. The default, System, follows the desktop's
   light/dark preference live via the XDG settings portal — the same source
@@ -95,6 +103,30 @@ settings at `~/.config/mountie/config.json`; Flatpak keeps them in its
 persistent application-data directory. On its first Flatpak launch, Mountie
 imports an existing native configuration automatically. It also maintains a
 `config.json.backup` file and recovers from it if the primary file is damaged.
+The actions menu can also export or import a validated JSON configuration.
+Exports include share locations, usernames, domains, and profile names, but
+never passwords. Exported identity information can still be sensitive, so the
+file is created with user-only permissions.
+
+## Credential security and convenience
+
+The default policy for a fresh installation is **Ask every time**. Existing
+installations retain their previous storage behavior during migration so an
+update does not silently break configured shares. Change the global default in
+About and diagnostics; enabling permanent storage requires an explicit warning
+confirmation. A share or reusable credential profile can override the default.
+
+| Policy | Convenience | Security tradeoff |
+|---|---|---|
+| Ask every time | Password is entered for every connection | Mountie stores no password |
+| Remember until logout | Reconnect without prompting during this login | Password lives in the keyring's temporary session collection |
+| Save in system keyring | Reconnect across logins | Protection depends on the desktop keyring being configured and locked correctly |
+
+Anonymous and passwordless shares work with every policy. Domains/workgroups
+are optional and are stored separately from usernames, so both domain accounts
+and standalone server accounts work. The credential profile manager in the
+actions menu can rename profiles, replace their passwords, and show which
+shares use them. A profile cannot be removed while a share still references it.
 
 ## Usage
 
@@ -106,6 +138,17 @@ network connections created by another application as read-only **External**
 rows. Use **Import** to adopt an eligible connection as a normal Mountie share.
 Mountie can recover the target and sometimes its username, but another
 application's password is never exposed, so you may need to enter it again.
+
+Use the connection-actions menu for Connect All, Disconnect All, credential
+profiles, and configuration import/export. Bulk operations run one at a time so
+credential prompts and errors remain attributable to the correct share.
+
+Auto-disconnect is a **fixed connected-duration timer**, not an idle-activity
+timer. Other applications read GVfs mounts directly, so Mountie cannot reliably
+observe all file activity. Timers and lock/suspend handling require Mountie to
+remain running. Lock and suspend notifications are best effort because desktop
+environments expose them differently; the ordinary duration timer remains the
+most predictable option.
 
 For SMB shares joined to Active Directory or a Windows workgroup, enter the
 domain/workgroup separately from the username. Leave the domain/workgroup
@@ -139,7 +182,19 @@ python3 scripts/test_configured_share.py "Share label"
 
 The check preserves the share's original mount state.
 
+## Flatpak size
+
+Flatpak reports an application payload separately from its shared KDE runtime.
+The PyQt BaseApp also includes optional Qt WebEngine components unless its
+provided cleanup is enabled. Mountie does not use WebEngine, so the manifest
+removes it and the Python build toolchain after building. In the current local
+test build this reduced Mountie's installed payload from about 256 MB to 35 MB
+and its single-file bundle from 65 MB to about 5.4 MB. The KDE runtime remains a
+shared dependency and is downloaded once for all compatible applications.
+
 ## TODO
+
+Completed reliability and security work:
 
 - [x] Allow passwordless and anonymous shares to mount without requiring a
   saved keyring password.
@@ -155,6 +210,24 @@ The check preserves the share's original mount state.
   instead of terminating the application.
 - [x] Validate host and share/path input and construct properly encoded URIs,
   including correct handling for IPv6 addresses and reserved characters.
+- [x] Default new installs to no credential storage, with explicit session and
+  permanent keyring policies and a warning before permanent storage.
+- [x] Support reusable credential profiles without putting passwords in the
+  configuration.
+- [x] Monitor GVfs mount changes, show external connections, and provide
+  sequential Connect All / Disconnect All controls.
+- [x] Add fixed-duration, screen-lock, and suspend-triggered disconnect options.
+- [x] Export and validate configurations without exporting passwords.
+- [x] Remove unused Qt WebEngine and build-time files from the Flatpak payload.
+
+Possible follow-up work:
+
+- [ ] Evaluate desktop-specific idle/activity APIs before offering an
+  activity-based disconnect mode; do not label a fixed timer as idle detection.
+- [ ] Evaluate an opt-in background/autostart mode through the desktop portal so
+  timers can continue without keeping the main window open.
+- [ ] Evaluate trusted-network auto-connect only where the desktop can provide a
+  reliable network identity without broadening Flatpak permissions excessively.
 
 ## Before publishing a fork
 

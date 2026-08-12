@@ -35,10 +35,11 @@ class WindowLifecycleTests(unittest.TestCase):
     def make_window(self):
         config = {
             "shares": [SHARE.copy()],
+            "credential_profiles": [],
             "theme": "system",
             "link_dir": "~/Shares",
             "links_enabled": False,
-            "never_save_credentials": False,
+            "credential_policy": "permanent",
         }
         patches = (
             mock.patch("mountie.ui.window.load_config", return_value=config),
@@ -83,9 +84,9 @@ class WindowLifecycleTests(unittest.TestCase):
         mount.assert_called_once()
         self.assertEqual(mount.call_args.args[1], "")
 
-    def test_never_save_prompts_without_reading_keyring(self):
+    def test_ask_policy_prompts_without_reading_keyring(self):
         window = self.make_window()
-        window.cfg["never_save_credentials"] = True
+        window.cfg["credential_policy"] = "ask"
         window.cfg["shares"][0]["username"] = "user"
         with mock.patch.object(
             QtWidgets.QInputDialog, "getText", return_value=("temporary", True)
@@ -95,29 +96,102 @@ class WindowLifecycleTests(unittest.TestCase):
         lookup.assert_not_called()
         self.assertEqual(mount.call_args.args[1], "temporary")
 
-    def test_never_save_keeps_passwordless_share_one_click(self):
+    def test_ask_policy_keeps_passwordless_share_one_click(self):
         window = self.make_window()
-        window.cfg["never_save_credentials"] = True
+        window.cfg["credential_policy"] = "ask"
         with mock.patch.object(QtWidgets.QInputDialog, "getText") as prompt, \
              mock.patch("mountie.ui.window.mount_share") as mount:
             window.on_toggle("share-id", True)
         prompt.assert_not_called()
         self.assertEqual(mount.call_args.args[1], "")
 
-    def test_enabling_never_save_clears_existing_passwords(self):
+    def test_switching_global_policy_to_ask_clears_existing_passwords(self):
         window = self.make_window()
         with mock.patch.object(window, "_save_config", return_value=True), \
              mock.patch("mountie.ui.window.clear_password") as clear:
-            window.set_never_save_credentials(True)
-        self.assertTrue(window.cfg["never_save_credentials"])
+            window.set_credential_policy("ask")
+        self.assertEqual(window.cfg["credential_policy"], "ask")
         clear.assert_called_once_with("share-id")
+
+    def test_switching_global_policy_clears_shared_profile_once(self):
+        window = self.make_window()
+        window.cfg["credential_profiles"] = [{
+            "id": "work", "label": "Work", "username": "alice",
+            "domain": "ACME", "credential_policy": "global",
+        }]
+        window.cfg["shares"][0]["credential_profile_id"] = "work"
+        second = {**SHARE, "id": "share-two", "label": "Other",
+                  "credential_profile_id": "work"}
+        window.cfg["shares"].append(second)
+        with mock.patch.object(window, "_save_config", return_value=True), \
+             mock.patch("mountie.ui.window.clear_password") as clear:
+            window.set_credential_policy("ask")
+        clear.assert_called_once_with("work")
+
+    def test_switching_global_policy_clears_unused_inheriting_profile(self):
+        window = self.make_window()
+        window.cfg["credential_profiles"] = [{
+            "id": "unused", "label": "Unused", "username": "alice",
+            "domain": "", "credential_policy": "global",
+        }]
+        with mock.patch.object(window, "_save_config", return_value=True), \
+             mock.patch("mountie.ui.window.clear_password") as clear:
+            window.set_credential_policy("ask")
+        self.assertCountEqual(
+            [call.args[0] for call in clear.call_args_list], ["share-id", "unused"]
+        )
+
+    def test_profile_permanent_to_session_removes_permanent_secret(self):
+        window = self.make_window()
+        original = {
+            "id": "work", "label": "Work", "username": "alice",
+            "domain": "ACME", "credential_policy": "permanent",
+        }
+        window.cfg["credential_profiles"] = [original]
+        window.cfg["shares"][0]["credential_profile_id"] = "work"
+        dialog = mock.Mock()
+        dialog.exec_.return_value = QtWidgets.QDialog.Accepted
+        dialog.profiles = [{**original, "credential_policy": "session"}]
+        dialog.password_updates = {}
+        dialog.deleted_ids = set()
+        with mock.patch(
+            "mountie.ui.window.CredentialProfilesDialog", return_value=dialog
+        ), mock.patch.object(window, "_save_config", return_value=True), \
+             mock.patch("mountie.ui.window.clear_password") as clear:
+            window.manage_credential_profiles()
+        clear.assert_called_once_with("work")
+
+    def test_search_filters_by_label_and_target(self):
+        window = self.make_window()
+        item = window.list.item(0)
+        window.search.setText("server.example")
+        self.assertFalse(item.isHidden())
+        window.search.setText("does-not-exist")
+        self.assertTrue(item.isHidden())
+
+    def test_connect_all_runs_mounts_sequentially(self):
+        window = self.make_window()
+        second = {**SHARE, "id": "share-two", "label": "Other"}
+        window.cfg["shares"].append(second)
+        window.reload_list(query_status=True)
+        callbacks = []
+        with mock.patch("mountie.ui.window.get_password", return_value=None), \
+             mock.patch(
+                 "mountie.ui.window.mount_share",
+                 side_effect=lambda cfg, password, callback: callbacks.append(callback),
+             ) as mount:
+            window.connect_all()
+            self.assertEqual(mount.call_count, 1)
+            callbacks.pop(0)(True, "connected", "")
+            self.app.processEvents()
+            self.assertEqual(mount.call_count, 2)
 
     def test_version_is_visible_in_main_window(self):
         window = self.make_window()
         version = window.findChild(QtWidgets.QLabel, "versionLabel")
         self.assertIsNotNone(version)
-        self.assertEqual(version.text(), "v0.1.3")
-        self.assertIn("0.1.3", window.windowTitle())
+        self.assertEqual(version.text(), "v0.2.0")
+        self.assertIn("0.2.0", window.windowTitle())
 
     def test_refresh_shows_external_mount_as_read_only(self):
         window = self.make_window()
@@ -155,7 +229,28 @@ class WindowLifecycleTests(unittest.TestCase):
         self.assertEqual(imported["host"], "other.example")
         self.assertIn("id", imported)
         factory.assert_called_once()
-        store.assert_called_once_with(imported["id"], "password")
+        store.assert_called_once_with(imported["id"], "password", "permanent")
+
+    def test_new_profile_is_reused_as_credential_key(self):
+        window = self.make_window()
+        values = {
+            "protocol": "smb", "label": "Other", "host": "other.example",
+            "share": "media", "domain": "ACME", "username": "alice",
+            "credential_policy": "session", "credential_profile_id": "",
+            "disconnect_after_minutes": 0, "_new_profile_name": "Work",
+        }
+        dialog = mock.Mock()
+        dialog.exec_.return_value = QtWidgets.QDialog.Accepted
+        dialog.values.return_value = (values, "password")
+        with mock.patch("mountie.ui.window.ShareDialog", return_value=dialog), \
+             mock.patch.object(window, "_save_config", return_value=True), \
+             mock.patch.object(window, "reload_list"), \
+             mock.patch("mountie.ui.window.set_password") as store:
+            window.import_external({})
+        profile = window.cfg["credential_profiles"][0]
+        imported = window.cfg["shares"][-1]
+        self.assertEqual(imported["credential_profile_id"], profile["id"])
+        store.assert_called_once_with(profile["id"], "password", "session")
 
     def test_edit_and_delete_actions_exist(self):
         window = self.make_window()

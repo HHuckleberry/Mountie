@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mountie"
-version = "0.1.3"
+version = "0.2.0"
 description = "A GUI for mounting and managing SMB/CIFS, AFP, NFS, SFTP, and WebDAV network shares, with theming that follows your desktop."
 readme = "README.md"
 license = { text = "GPL-3.0-only" }

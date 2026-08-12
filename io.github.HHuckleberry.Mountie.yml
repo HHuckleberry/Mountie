@@ -19,6 +19,35 @@ command: mountie
 build-options:
   env:
     PYTHONPATH: /app/lib/python3.13/site-packages
+    # PyQt.BaseApp inherits QtWebEngine, but Mountie does not import it.
+    # Its supplied cleanup script checks this switch before removing the
+    # WebEngine/PDF libraries and their large Chromium data files.
+    BASEAPP_REMOVE_WEBENGINE: '1'
+
+cleanup-commands:
+  - /app/cleanup-BaseApp.sh
+
+# PyQt.BaseApp is intentionally broad. Mountie uses QtCore/QtGui/QtWidgets,
+# not WebEngine or the packaging toolchain bundled for applications that
+# build extra PyQt modules. Removing these app-local files does not affect the
+# shared KDE runtime and cuts hundreds of uncompressed megabytes.
+cleanup:
+  - /lib/*/libQt5WebEngine*.so*
+  - /libexec/QtWebEngineProcess
+  - /resources
+  - /lib/debug
+  - /lib/python*/site-packages/PyQt5/QtWebEngine*.so
+  - /lib/python*/site-packages/PyQt5/QtWebChannel*.so
+  - /lib/python*/site-packages/pyqtbuild
+  - /lib/python*/site-packages/sipbuild
+  - /lib/python*/site-packages/PyQt5_sip-*.dist-info
+  - /lib/python*/site-packages/PyQt5-*.dist-info
+  - /lib/python*/site-packages/setuptools*
+  - /lib/python*/site-packages/pkg_resources
+  - /lib/python*/site-packages/wheel*
+  - /lib/python*/site-packages/mesonpy
+  - /lib/python*/site-packages/meson_python-*.dist-info
+  - /lib/python*/site-packages/pyproject_metadata*
 
 finish-args:
   - --env=GIO_EXTRA_MODULES=/app/lib64/gio/modules
@@ -40,6 +69,8 @@ finish-args:
   # falling back to the session bus for every operation.
   - --filesystem=xdg-run/gvfsd
   - --talk-name=org.freedesktop.secrets
+  - --talk-name=org.freedesktop.ScreenSaver
+  - --system-talk-name=org.freedesktop.login1
   # Read-only access lets the first Flatpak run migrate shares from a prior
   # native installation. New writes use Flatpak's persistent XDG config dir.
   - --filesystem=~/.config/mountie:ro
