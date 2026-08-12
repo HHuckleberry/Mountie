@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mountie"
-version = "0.1.0"
+version = "0.1.2"
 description = "A GUI for mounting and managing SMB/CIFS, AFP, NFS, SFTP, and WebDAV network shares, with theming that follows your desktop."
 readme = "README.md"
 license = { text = "GPL-3.0-only" }
@@ -25,5 +25,5 @@ dependencies = [
 [project.scripts]
 mountie = "mountie.app:main"
 
-[tool.setuptools]
-packages = ["mountie"]
+[tool.setuptools.packages.find]
+include = ["mountie*"]

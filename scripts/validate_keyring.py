@@ -6,7 +6,7 @@ than silently falling back to nothing. Never prints the secret value."""
 import sys
 import uuid
 
-from mountie.app import SECRET_SCHEMA
+from mountie.credentials import SECRET_SCHEMA
 from gi.repository import Secret
 
 

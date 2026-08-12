@@ -1,0 +1,207 @@
+"""Reusable widgets and dialogs used by Mountie's main window."""
+
+import os
+from pathlib import Path
+
+from PyQt5 import QtCore, QtGui, QtWidgets
+
+from mountie.mounts import share_uri
+from mountie.settings import DEFAULT_PROTOCOL, PROTOCOLS
+from mountie.ui.theme import cosmic_tokens, icon_button
+from mountie.ui.visuals import STATUS_TOKEN_KEY
+
+
+class ToggleSwitch(QtWidgets.QAbstractButton):
+    """A small animated pill-style on/off switch, used in place of a checkbox."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setFixedSize(42, 24)
+        self._offset = 3.0
+        self._anim = QtCore.QPropertyAnimation(self, b"offset", self)
+        self._anim.setDuration(120)
+        self.toggled.connect(self._animate)
+
+    def _animate(self, checked):
+        self._anim.stop()
+        self._anim.setStartValue(self._offset)
+        self._anim.setEndValue(21.0 if checked else 3.0)
+        self._anim.start()
+
+    def getOffset(self):
+        return self._offset
+
+    def setOffset(self, value):
+        self._offset = value
+        self.update()
+
+    offset = QtCore.pyqtProperty(float, getOffset, setOffset)
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+
+        palette = self.palette()
+        if self.isChecked():
+            track_color = palette.color(QtGui.QPalette.Highlight)
+        elif not self.isEnabled():
+            track_color = palette.color(QtGui.QPalette.Button).lighter(105)
+        else:
+            track_color = palette.color(QtGui.QPalette.Mid)
+
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(track_color)
+        painter.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
+
+        painter.setBrush(QtGui.QColor("white"))
+        thumb_d = rect.height() - 6
+        painter.drawEllipse(QtCore.QRectF(self._offset, 4, thumb_d, thumb_d))
+
+
+
+
+class StatusBadge(QtWidgets.QLabel):
+    def __init__(self, text=""):
+        super().__init__()
+        self.setAlignment(QtCore.Qt.AlignCenter)
+        self.set_status(text)
+
+    def set_status(self, text):
+        self.setText(text)
+        r, g, b = cosmic_tokens(self)[STATUS_TOKEN_KEY.get(text, "muted")]
+        self.setStyleSheet(
+            f"QLabel {{ color: rgb({r},{g},{b}); background: rgba({r},{g},{b},40); "
+            f"border-radius: 8px; padding: 2px 10px; font-size: 11px; font-weight: 600; }}"
+        )
+
+
+
+
+# -------------------------------------------------------------- add/edit ---
+
+class ShareDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None, existing=None, default_host=""):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Share" if existing else "Add Share")
+        self.existing = existing
+
+        form = QtWidgets.QFormLayout(self)
+
+        self.protocol_combo = QtWidgets.QComboBox()
+        for key, label in PROTOCOLS:
+            self.protocol_combo.addItem(label, key)
+        current_protocol = existing.get("protocol", DEFAULT_PROTOCOL) if existing else DEFAULT_PROTOCOL
+        self.protocol_combo.setCurrentIndex(max(0, self.protocol_combo.findData(current_protocol)))
+
+        self.label_edit = QtWidgets.QLineEdit(existing["label"] if existing else "")
+        self.host_edit = QtWidgets.QLineEdit(existing["host"] if existing else default_host)
+        self.share_edit = QtWidgets.QLineEdit(existing["share"] if existing else "")
+        self.user_edit = QtWidgets.QLineEdit(existing["username"] if existing else "")
+        self.pass_edit = QtWidgets.QLineEdit()
+        self.pass_edit.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.pass_edit.setPlaceholderText(
+            "(leave blank to keep current password)" if existing else ""
+        )
+
+        form.addRow("Protocol:", self.protocol_combo)
+        form.addRow("Label:", self.label_edit)
+        form.addRow("Host / IP:", self.host_edit)
+        form.addRow("Share / path:", self.share_edit)
+        form.addRow("Username:", self.user_edit)
+        form.addRow("Password:", self.pass_edit)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def values(self):
+        return {
+            "protocol": self.protocol_combo.currentData(),
+            "label": self.label_edit.text().strip(),
+            "host": self.host_edit.text().strip(),
+            "share": self.share_edit.text().strip(),
+            "username": self.user_edit.text().strip(),
+        }, self.pass_edit.text()
+
+
+# ------------------------------------------------------------ main window --
+
+class Bridge(QtCore.QObject):
+    # share_id, success, status, error detail
+    done = QtCore.pyqtSignal(str, bool, str, str)
+
+
+class ShareCard(QtWidgets.QFrame):
+    def __init__(self, cfg):
+        super().__init__()
+        self.share_id = cfg["id"]
+        self.setObjectName("shareCard")
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(14, 10, 10, 10)
+        layout.setSpacing(12)
+
+        self.toggle = ToggleSwitch()
+        layout.addWidget(self.toggle)
+
+        text_col = QtWidgets.QVBoxLayout()
+        text_col.setSpacing(2)
+        self.label_lbl = QtWidgets.QLabel(cfg["label"])
+        self.label_lbl.setObjectName("shareLabel")
+        protocol = cfg.get("protocol", DEFAULT_PROTOCOL)
+        self.target_lbl = QtWidgets.QLabel(f"{protocol}://{cfg['host']}/{cfg['share']}")
+        self.target_lbl.setObjectName("shareTarget")
+        text_col.addWidget(self.label_lbl)
+        text_col.addWidget(self.target_lbl)
+        layout.addLayout(text_col, 1)
+
+        self.badge = StatusBadge("unknown")
+        layout.addWidget(self.badge)
+
+        self.edit_btn = icon_button(
+            ["document-edit-symbolic", "document-edit"], "Edit share"
+        )
+        layout.addWidget(self.edit_btn)
+
+        self.delete_btn = icon_button(
+            ["user-trash-symbolic", "edit-delete-symbolic", "edit-delete"], "Delete share"
+        )
+        layout.addWidget(self.delete_btn)
+
+        self.uri_text = self.target_lbl.text()
+        self.refresh_theme()
+
+    def set_link(self, path):
+        """Shows the short local path once the share is mounted, since that's
+        the one worth knowing; the URI stays in the tooltip."""
+        if path:
+            display = str(path)
+            home = str(Path.home())
+            if display.startswith(home + os.sep):
+                display = "~" + display[len(home):]
+            self.target_lbl.setText(display)
+            self.setToolTip(f"{self.uri_text}\nMounted at {path}")
+        else:
+            self.target_lbl.setText(self.uri_text)
+            self.setToolTip(self.uri_text)
+
+    def refresh_theme(self):
+        """Recomputes the colors that are baked into stylesheets rather than
+        read live from the palette."""
+        r, g, b = cosmic_tokens(self)["secondary"]
+        self.target_lbl.setStyleSheet(f"#shareTarget {{ color: rgb({r},{g},{b}); }}")
+        self.badge.set_status(self.badge.text())
+
+    def set_enabled_toggle(self, enabled):
+        self.toggle.setEnabled(enabled)
+
+    def set_operations_enabled(self, enabled):
+        self.toggle.setEnabled(enabled)
+        self.edit_btn.setEnabled(enabled)
+        self.delete_btn.setEnabled(enabled)

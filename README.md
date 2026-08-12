@@ -95,6 +95,23 @@ optional credentials. Flip the toggle to mount or unmount. Status badges
 show connected/disconnected/error state; use the refresh button to
 re-check all shares against what's actually mounted.
 
+## TODO
+
+- [x] Allow passwordless and anonymous shares to mount without requiring a
+  saved keyring password.
+- [x] After a failed mount or unmount, query the real mount state and keep the
+  toggle, status badge, and symlink synchronized with it.
+- [x] When deleting a mounted share, wait for unmounting to finish and handle
+  failures before removing its configuration, keyring entry, and symlink.
+- [x] Safely handle edits to mounted shares, including unmounting the old
+  target and removing or renaming its previous symlink.
+- [x] Prevent normalized share labels from producing duplicate symlink names,
+  or include a stable unique suffix in each generated name.
+- [x] Catch and report configuration, filesystem, and secret-service errors
+  instead of terminating the application.
+- [x] Validate host and share/path input and construct properly encoded URIs,
+  including correct handling for IPv6 addresses and reserved characters.
+
 ## Before publishing a fork
 
 `APP_ID` in `mountie/app.py` is the single source of truth for the

@@ -205,7 +205,7 @@ modules:
       # then failed with "invalid command 'bdist_wheel'" until the wheel
       # module above was also added, since setuptools doesn't bundle that
       # command itself.
-      - pip3 install --no-index --no-build-isolation --find-links=.
+      - pip3 install --no-index --no-build-isolation --no-deps --find-links=.
           --prefix=${FLATPAK_DEST} .
       - install -Dm644 data/io.github.HHuckleberry.Mountie.desktop
           ${FLATPAK_DEST}/share/applications/io.github.HHuckleberry.Mountie.desktop
@@ -220,5 +220,4 @@ modules:
       # Flathub manifests), but a commit-pinned git source can't drift.
       - type: git
         url: https://github.com/HHuckleberry/Mountie.git
-        tag: v0.1.0
-        commit: f68b64982e877690799c569fb9df55f981be9518
+        tag: v0.1.2

@@ -15,7 +15,8 @@ import sys
 
 # Imported first: it pins the Secret typelib version, which has to happen
 # before gi.repository.Secret is pulled in.
-from mountie.app import APP_ID, SECRET_SCHEMA, load_config
+from mountie.credentials import SECRET_SCHEMA
+from mountie.settings import APP_ID, load_config
 
 from gi.repository import Secret
 
