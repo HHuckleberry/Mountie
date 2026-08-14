@@ -140,6 +140,18 @@ rows. Use **Import** to adopt an eligible connection as a normal Mountie share.
 Mountie can recover the target and sometimes its username, but another
 application's password is never exposed, so you may need to enter it again.
 
+Use **Discover** to ask the desktop's GVfs network service for devices and
+shares advertised on the local network. Discovery is passive: Mountie does not
+scan address ranges, test ports, or connect automatically. Device icons supplied
+by the desktop are shown when available. Choose **Sign In & Browse** on a server
+to enter one-use credentials, explore its shares, and select the exact share to
+save. GVfs is told not to retain the browsing password; the selected credentials
+are passed to the ordinary Add Share dialog, where Mountie's normal password
+storage policy applies. **Add…** remains available when you already know the
+share name and only want the discovered server address prefilled.
+Availability depends on the desktop's installed GVfs discovery backends, so
+manual Add Share remains available when network browsing is unsupported.
+
 Use the connection-actions menu for Connect All, Disconnect All, credential
 profiles, and configuration import/export. Bulk operations run one at a time so
 credential prompts and errors remain attributable to the correct share.

@@ -19,7 +19,7 @@ from PyQt5 import QtCore, QtWidgets
 
 from mountie import settings
 from mountie.mounts import CredMountOperation, link_path, share_uri
-from mountie.ui.window import MainWindow
+from mountie.app.window import MainWindow
 
 
 def valid_share(**overrides):
@@ -127,14 +127,14 @@ class UiAbuseTests(unittest.TestCase):
             "shares": [valid_share()],
             "links_enabled": False,
         }
-        with mock.patch("mountie.ui.window.load_config", return_value=config), \
-             mock.patch("mountie.ui.window.prune_links"), \
-             mock.patch("mountie.ui.window.is_mounted", return_value=False), \
-             mock.patch("mountie.ui.window.update_link", return_value=None), \
-             mock.patch("mountie.ui.window.external_network_mounts", return_value=[]), \
-             mock.patch("mountie.ui.window.get_password", return_value="secret"), \
-             mock.patch("mountie.ui.window.mount_share") as mount, \
-             mock.patch("mountie.ui.window.UpdateChecker"):
+        with mock.patch("mountie.app.window.load_config", return_value=config), \
+             mock.patch("mountie.app.window.prune_links"), \
+             mock.patch("mountie.app.window.is_mounted", return_value=False), \
+             mock.patch("mountie.app.window.update_link", return_value=None), \
+             mock.patch("mountie.app.window.external_network_mounts", return_value=[]), \
+             mock.patch("mountie.app.window.get_password", return_value="secret"), \
+             mock.patch("mountie.app.window.mount_share") as mount, \
+             mock.patch("mountie.app.window.UpdateChecker"):
             window = MainWindow(FakeTheme())
             self.addCleanup(window.close)
             window.on_toggle("share-id", True)

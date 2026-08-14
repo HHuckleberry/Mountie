@@ -7,7 +7,7 @@ from gi.repository import Gio, GLib
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mountie.settings import THEMES, THEME_SYSTEM
-from mountie.ui.visuals import APP_STYLESHEET, COSMIC_TOKENS, PALETTE_COLORS
+from mountie.app.visuals import APP_STYLESHEET, COSMIC_TOKENS, PALETTE_COLORS
 
 
 def initialize_icon_theme():

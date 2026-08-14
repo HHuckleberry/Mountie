@@ -7,8 +7,8 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mountie import __version__
-from mountie.ui.theme import initialize_icon_theme
-from mountie.ui.window import MainWindow
+from mountie.app.theme import initialize_icon_theme
+from mountie.app.window import MainWindow
 
 
 SHARE = {
@@ -46,11 +46,11 @@ class WindowLifecycleTests(unittest.TestCase):
             "check_for_updates": False,
         }
         patches = (
-            mock.patch("mountie.ui.window.load_config", return_value=config),
-            mock.patch("mountie.ui.window.prune_links"),
-            mock.patch("mountie.ui.window.is_mounted", return_value=False),
-            mock.patch("mountie.ui.window.update_link", return_value=None),
-            mock.patch("mountie.ui.window.external_network_mounts", return_value=[]),
+            mock.patch("mountie.app.window.load_config", return_value=config),
+            mock.patch("mountie.app.window.prune_links"),
+            mock.patch("mountie.app.window.is_mounted", return_value=False),
+            mock.patch("mountie.app.window.update_link", return_value=None),
+            mock.patch("mountie.app.window.external_network_mounts", return_value=[]),
         )
         for patcher in patches:
             patcher.start()
@@ -82,8 +82,8 @@ class WindowLifecycleTests(unittest.TestCase):
 
     def test_passwordless_share_is_passed_to_gvfs(self):
         window = self.make_window()
-        with mock.patch("mountie.ui.window.get_password", return_value=None), \
-             mock.patch("mountie.ui.window.mount_share") as mount:
+        with mock.patch("mountie.app.window.get_password", return_value=None), \
+             mock.patch("mountie.app.window.mount_share") as mount:
             window.on_toggle("share-id", True)
         mount.assert_called_once()
         self.assertEqual(mount.call_args.args[1], "")
@@ -94,8 +94,8 @@ class WindowLifecycleTests(unittest.TestCase):
         window.cfg["shares"][0]["username"] = "user"
         with mock.patch.object(
             QtWidgets.QInputDialog, "getText", return_value=("temporary", True)
-        ), mock.patch("mountie.ui.window.get_password") as lookup, \
-             mock.patch("mountie.ui.window.mount_share") as mount:
+        ), mock.patch("mountie.app.window.get_password") as lookup, \
+             mock.patch("mountie.app.window.mount_share") as mount:
             window.on_toggle("share-id", True)
         lookup.assert_not_called()
         self.assertEqual(mount.call_args.args[1], "temporary")
@@ -104,7 +104,7 @@ class WindowLifecycleTests(unittest.TestCase):
         window = self.make_window()
         window.cfg["credential_policy"] = "ask"
         with mock.patch.object(QtWidgets.QInputDialog, "getText") as prompt, \
-             mock.patch("mountie.ui.window.mount_share") as mount:
+             mock.patch("mountie.app.window.mount_share") as mount:
             window.on_toggle("share-id", True)
         prompt.assert_not_called()
         self.assertEqual(mount.call_args.args[1], "")
@@ -112,7 +112,7 @@ class WindowLifecycleTests(unittest.TestCase):
     def test_switching_global_policy_to_ask_clears_existing_passwords(self):
         window = self.make_window()
         with mock.patch.object(window, "_save_config", return_value=True), \
-             mock.patch("mountie.ui.window.clear_password") as clear:
+             mock.patch("mountie.app.window.clear_password") as clear:
             window.set_credential_policy("ask")
         self.assertEqual(window.cfg["credential_policy"], "ask")
         clear.assert_called_once_with("share-id")
@@ -128,7 +128,7 @@ class WindowLifecycleTests(unittest.TestCase):
                   "credential_profile_id": "work"}
         window.cfg["shares"].append(second)
         with mock.patch.object(window, "_save_config", return_value=True), \
-             mock.patch("mountie.ui.window.clear_password") as clear:
+             mock.patch("mountie.app.window.clear_password") as clear:
             window.set_credential_policy("ask")
         clear.assert_called_once_with("work")
 
@@ -139,7 +139,7 @@ class WindowLifecycleTests(unittest.TestCase):
             "domain": "", "credential_policy": "global",
         }]
         with mock.patch.object(window, "_save_config", return_value=True), \
-             mock.patch("mountie.ui.window.clear_password") as clear:
+             mock.patch("mountie.app.window.clear_password") as clear:
             window.set_credential_policy("ask")
         self.assertCountEqual(
             [call.args[0] for call in clear.call_args_list], ["share-id", "unused"]
@@ -159,9 +159,9 @@ class WindowLifecycleTests(unittest.TestCase):
         dialog.password_updates = {}
         dialog.deleted_ids = set()
         with mock.patch(
-            "mountie.ui.window.CredentialProfilesDialog", return_value=dialog
+            "mountie.app.window.CredentialProfilesDialog", return_value=dialog
         ), mock.patch.object(window, "_save_config", return_value=True), \
-             mock.patch("mountie.ui.window.clear_password") as clear:
+             mock.patch("mountie.app.window.clear_password") as clear:
             window.manage_credential_profiles()
         clear.assert_called_once_with("work")
 
@@ -179,9 +179,9 @@ class WindowLifecycleTests(unittest.TestCase):
         window.cfg["shares"].append(second)
         window.reload_list(query_status=True)
         callbacks = []
-        with mock.patch("mountie.ui.window.get_password", return_value=None), \
+        with mock.patch("mountie.app.window.get_password", return_value=None), \
              mock.patch(
-                 "mountie.ui.window.mount_share",
+                 "mountie.app.window.mount_share",
                  side_effect=lambda cfg, password, callback: callbacks.append(callback),
              ) as mount:
             window.connect_all()
@@ -204,7 +204,7 @@ class WindowLifecycleTests(unittest.TestCase):
         dialog.credential_policy.currentData.return_value = "session"
         dialog.theme.currentData.return_value = "dark"
         dialog.check_for_updates.isChecked.return_value = False
-        with mock.patch("mountie.ui.window.SettingsDialog", return_value=dialog), \
+        with mock.patch("mountie.app.window.SettingsDialog", return_value=dialog), \
              mock.patch.object(
                  window, "set_credential_policy", return_value=True
              ) as set_policy, mock.patch.object(window, "set_theme") as set_theme, \
@@ -220,11 +220,58 @@ class WindowLifecycleTests(unittest.TestCase):
         self.assertIsNotNone(button)
         self.assertEqual(button.toolTip(), "Settings")
 
+    def test_discover_button_opens_passive_discovery_dialog(self):
+        window = self.make_window()
+        dialog = mock.Mock()
+        with mock.patch("mountie.app.window.DiscoveryDialog", return_value=dialog) as cls:
+            window.discover_btn.click()
+        cls.assert_called_once_with(window.cfg["shares"], window)
+        dialog.import_requested.connect.assert_called_once()
+        dialog.exec_.assert_called_once()
+
+    def test_discover_button_is_below_the_share_list(self):
+        window = self.make_window()
+        layout = window.centralWidget().layout()
+        self.assertGreater(
+            layout.indexOf(window.discover_btn),
+            layout.indexOf(window.list),
+        )
+
+    def test_discovery_selection_closes_browser_before_opening_share_dialog(self):
+        window = self.make_window()
+        initial = {
+            "protocol": "smb", "label": "Found", "host": "nas.local",
+            "share": "data", "domain": "", "username": "",
+        }
+        dialog = mock.Mock()
+
+        def emit_selection():
+            callback = dialog.import_requested.connect.call_args.args[0]
+            callback(initial)
+            return QtWidgets.QDialog.Accepted
+
+        dialog.exec_.side_effect = emit_selection
+        with mock.patch("mountie.app.window.DiscoveryDialog", return_value=dialog), \
+             mock.patch.object(window, "import_discovered") as imported:
+            window.show_discovery()
+        dialog.accept.assert_called_once()
+        imported.assert_called_once_with(initial)
+
+    def test_discovered_share_uses_existing_import_flow(self):
+        window = self.make_window()
+        initial = {
+            "protocol": "smb", "label": "Found", "host": "nas.local",
+            "share": "data", "domain": "", "username": "",
+        }
+        with mock.patch.object(window, "_import_share") as import_share:
+            window.import_discovered(initial)
+        import_share.assert_called_once_with(initial, "Add Discovered Share")
+
     def test_refresh_shows_external_mount_as_read_only(self):
         window = self.make_window()
         connection = {"name": "Other share", "uri": "smb://other/data"}
         with mock.patch(
-            "mountie.ui.window.external_network_mounts", return_value=[connection]
+            "mountie.app.window.external_network_mounts", return_value=[connection]
         ):
             window.refresh_all_status()
         self.assertEqual(len(window.external_cards), 1)
@@ -246,10 +293,10 @@ class WindowLifecycleTests(unittest.TestCase):
         dialog = mock.Mock()
         dialog.exec_.return_value = QtWidgets.QDialog.Accepted
         dialog.values.return_value = (initial.copy(), "password")
-        with mock.patch("mountie.ui.window.ShareDialog", return_value=dialog) as factory, \
+        with mock.patch("mountie.app.window.ShareDialog", return_value=dialog) as factory, \
              mock.patch.object(window, "_save_config", return_value=True), \
              mock.patch.object(window, "reload_list"), \
-             mock.patch("mountie.ui.window.set_password") as store:
+             mock.patch("mountie.app.window.set_password") as store:
             window.import_external(initial)
         self.assertEqual(len(window.cfg["shares"]), 2)
         imported = window.cfg["shares"][-1]
@@ -269,10 +316,10 @@ class WindowLifecycleTests(unittest.TestCase):
         dialog = mock.Mock()
         dialog.exec_.return_value = QtWidgets.QDialog.Accepted
         dialog.values.return_value = (values, "password")
-        with mock.patch("mountie.ui.window.ShareDialog", return_value=dialog), \
+        with mock.patch("mountie.app.window.ShareDialog", return_value=dialog), \
              mock.patch.object(window, "_save_config", return_value=True), \
              mock.patch.object(window, "reload_list"), \
-             mock.patch("mountie.ui.window.set_password") as store:
+             mock.patch("mountie.app.window.set_password") as store:
             window.import_external({})
         profile = window.cfg["credential_profiles"][0]
         imported = window.cfg["shares"][-1]
@@ -289,8 +336,8 @@ class WindowLifecycleTests(unittest.TestCase):
 
     def test_failed_unmount_restores_actual_mounted_state(self):
         window = self.make_window()
-        with mock.patch("mountie.ui.window.is_mounted", return_value=True), \
-             mock.patch("mountie.ui.window.update_link", return_value=None), \
+        with mock.patch("mountie.app.window.is_mounted", return_value=True), \
+             mock.patch("mountie.app.window.update_link", return_value=None), \
              mock.patch.object(QtWidgets.QMessageBox, "critical"):
             window._on_op_done(
                 "share-id", False, "unmount failed", "Could not disconnect: busy"
@@ -305,8 +352,8 @@ class WindowLifecycleTests(unittest.TestCase):
             nonlocal callback
             callback = on_done
 
-        with mock.patch("mountie.ui.window.is_mounted", return_value=True), \
-             mock.patch("mountie.ui.window.unmount_share", side_effect=capture_unmount), \
+        with mock.patch("mountie.app.window.is_mounted", return_value=True), \
+             mock.patch("mountie.app.window.unmount_share", side_effect=capture_unmount), \
              mock.patch.object(QtWidgets.QMessageBox, "question", return_value=QtWidgets.QMessageBox.Yes), \
              mock.patch.object(QtWidgets.QMessageBox, "critical"):
             window.delete_share("share-id")
@@ -317,9 +364,9 @@ class WindowLifecycleTests(unittest.TestCase):
     def test_delete_removes_share_only_after_successful_unmount(self):
         window = self.make_window()
         callbacks = []
-        with mock.patch("mountie.ui.window.is_mounted", return_value=True), \
-             mock.patch("mountie.ui.window.unmount_share", side_effect=lambda cfg, cb: callbacks.append(cb)), \
-             mock.patch("mountie.ui.window.clear_password"), \
+        with mock.patch("mountie.app.window.is_mounted", return_value=True), \
+             mock.patch("mountie.app.window.unmount_share", side_effect=lambda cfg, cb: callbacks.append(cb)), \
+             mock.patch("mountie.app.window.clear_password"), \
              mock.patch.object(window, "_save_config", return_value=True), \
              mock.patch.object(QtWidgets.QMessageBox, "question", return_value=QtWidgets.QMessageBox.Yes):
             window.delete_share("share-id")
@@ -333,18 +380,18 @@ class WindowLifecycleTests(unittest.TestCase):
             "link_dir": "~/Shares", "links_enabled": False,
             "credential_policy": "permanent", "check_for_updates": True,
         }
-        with mock.patch("mountie.ui.window.load_config", return_value=config), \
-             mock.patch("mountie.ui.window.prune_links"), \
-             mock.patch("mountie.ui.window.is_mounted", return_value=False), \
-             mock.patch("mountie.ui.window.update_link", return_value=None), \
-             mock.patch("mountie.ui.window.external_network_mounts", return_value=[]), \
-             mock.patch("mountie.ui.window.UpdateChecker") as checker_cls:
+        with mock.patch("mountie.app.window.load_config", return_value=config), \
+             mock.patch("mountie.app.window.prune_links"), \
+             mock.patch("mountie.app.window.is_mounted", return_value=False), \
+             mock.patch("mountie.app.window.update_link", return_value=None), \
+             mock.patch("mountie.app.window.external_network_mounts", return_value=[]), \
+             mock.patch("mountie.app.window.UpdateChecker") as checker_cls:
             window = MainWindow(FakeTheme())
             self.addCleanup(window.close)
         checker_cls.return_value.check.assert_called_once_with(__version__)
 
     def test_update_check_skipped_on_startup_when_disabled(self):
-        with mock.patch("mountie.ui.window.UpdateChecker") as checker_cls:
+        with mock.patch("mountie.app.window.UpdateChecker") as checker_cls:
             self.make_window()
         checker_cls.assert_not_called()
 
@@ -384,7 +431,7 @@ class WindowLifecycleTests(unittest.TestCase):
         dialog.credential_policy.currentData.return_value = window.cfg["credential_policy"]
         dialog.theme.currentData.return_value = window.cfg["theme"]
         dialog.check_for_updates.isChecked.return_value = True
-        with mock.patch("mountie.ui.window.SettingsDialog", return_value=dialog), \
+        with mock.patch("mountie.app.window.SettingsDialog", return_value=dialog), \
              mock.patch.object(window, "set_check_for_updates") as set_updates:
             window.show_settings()
         set_updates.assert_called_once_with(True)
@@ -397,9 +444,9 @@ class WindowLifecycleTests(unittest.TestCase):
         dialog = mock.Mock()
         dialog.exec_.return_value = QtWidgets.QDialog.Accepted
         dialog.values.return_value = (values, "")
-        with mock.patch("mountie.ui.window.ShareDialog", return_value=dialog), \
-             mock.patch("mountie.ui.window.is_mounted", return_value=True), \
-             mock.patch("mountie.ui.window.unmount_share", side_effect=lambda cfg, cb: callbacks.append(cb)), \
+        with mock.patch("mountie.app.window.ShareDialog", return_value=dialog), \
+             mock.patch("mountie.app.window.is_mounted", return_value=True), \
+             mock.patch("mountie.app.window.unmount_share", side_effect=lambda cfg, cb: callbacks.append(cb)), \
              mock.patch.object(window, "_save_config", return_value=True), \
              mock.patch.object(window, "reload_list"):
             window.edit_share("share-id")

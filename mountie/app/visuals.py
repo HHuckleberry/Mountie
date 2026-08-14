@@ -1,4 +1,4 @@
-"""Palette tokens, status colors, and application stylesheet."""
+"""Application palette tokens, status colors, and stylesheet."""
 
 COSMIC_TOKENS = {
     "dark": {
@@ -144,6 +144,14 @@ QTabWidget#shareSettingsTabs QTabBar::tab:selected {
 #versionLabel {
     color: palette(placeholder-text);
     font-size: 11px;
+}
+QLabel[class="protocolBadge"] {
+    background: palette(alternate-base);
+    border: 1px solid palette(mid);
+    border-radius: 8px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
 }
 QPushButton#primaryButton {
     background: palette(highlight);

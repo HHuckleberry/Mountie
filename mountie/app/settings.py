@@ -1,3 +1,5 @@
+"""Application settings, diagnostics, and credential-profile dialogs."""
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mountie import __version__

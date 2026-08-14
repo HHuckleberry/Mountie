@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+"""Create and run the Mountie desktop application."""
 import sys
 
 import gi
@@ -9,8 +9,8 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mountie.logging_setup import configure_logging
 from mountie.settings import APP_ID
-from mountie.ui.theme import ThemeManager, initialize_icon_theme
-from mountie.ui.window import MainWindow
+from mountie.app.theme import ThemeManager, initialize_icon_theme
+from mountie.app.window import MainWindow
 
 
 def pump_glib(_=None):

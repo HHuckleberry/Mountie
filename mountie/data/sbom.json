@@ -3,7 +3,7 @@
   "specVersion": "1.5",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-08-14T05:52:13Z",
+    "timestamp": "2026-08-14T22:26:11Z",
     "tools": [
       {
         "name": "scripts/generate_sbom.py"
@@ -12,7 +12,7 @@
     "component": {
       "type": "application",
       "name": "mountie",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "externalReferences": [
         {
           "type": "vcs",

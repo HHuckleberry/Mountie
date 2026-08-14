@@ -75,6 +75,16 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.3.1" date="2026-08-14">
+      <description>
+        <p>Discover and add network-advertised shares.</p>
+        <ul>
+          <li>Discover nearby devices and shares advertised through the desktop network backend</li>
+          <li>Show desktop-provided device and share icons in the discovery browser</li>
+          <li>Sign in to discovered servers, explore their shares and select the exact share to save</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-08-13">
       <description>
         <p>A clearer, more focused settings experience.</p>

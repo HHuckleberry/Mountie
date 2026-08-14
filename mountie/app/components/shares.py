@@ -1,11 +1,10 @@
-"""Reusable widgets and dialogs used by Mountie's main window."""
+"""Share editing and main-window share cards."""
 
 import os
 from pathlib import Path
 
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
-from mountie.mounts import share_uri
 from mountie.settings import (
     CREDENTIAL_POLICIES,
     CREDENTIAL_USE_GLOBAL,
@@ -13,79 +12,9 @@ from mountie.settings import (
     DISCONNECT_OPTIONS,
     PROTOCOLS,
 )
-from mountie.ui.theme import cosmic_tokens, icon_button
-from mountie.ui.visuals import STATUS_TOKEN_KEY
+from mountie.app.components.common import StatusBadge, ToggleSwitch
+from mountie.app.theme import cosmic_tokens, icon_button
 
-
-class ToggleSwitch(QtWidgets.QAbstractButton):
-    """A small animated pill-style on/off switch, used in place of a checkbox."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setCheckable(True)
-        self.setFixedSize(42, 24)
-        self._offset = 3.0
-        self._anim = QtCore.QPropertyAnimation(self, b"offset", self)
-        self._anim.setDuration(120)
-        self.toggled.connect(self._animate)
-
-    def _animate(self, checked):
-        self._anim.stop()
-        self._anim.setStartValue(self._offset)
-        self._anim.setEndValue(21.0 if checked else 3.0)
-        self._anim.start()
-
-    def getOffset(self):
-        return self._offset
-
-    def setOffset(self, value):
-        self._offset = value
-        self.update()
-
-    offset = QtCore.pyqtProperty(float, getOffset, setOffset)
-
-    def paintEvent(self, event):
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        rect = self.rect().adjusted(1, 1, -1, -1)
-
-        palette = self.palette()
-        if self.isChecked():
-            track_color = palette.color(QtGui.QPalette.Highlight)
-        elif not self.isEnabled():
-            track_color = palette.color(QtGui.QPalette.Button).lighter(105)
-        else:
-            track_color = palette.color(QtGui.QPalette.Mid)
-
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.setBrush(track_color)
-        painter.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
-
-        painter.setBrush(QtGui.QColor("white"))
-        thumb_d = rect.height() - 6
-        painter.drawEllipse(QtCore.QRectF(self._offset, 4, thumb_d, thumb_d))
-
-
-
-
-class StatusBadge(QtWidgets.QLabel):
-    def __init__(self, text=""):
-        super().__init__()
-        self.setAlignment(QtCore.Qt.AlignCenter)
-        self.set_status(text)
-
-    def set_status(self, text):
-        self.setText(text)
-        r, g, b = cosmic_tokens(self)[STATUS_TOKEN_KEY.get(text, "muted")]
-        self.setStyleSheet(
-            f"QLabel {{ color: rgb({r},{g},{b}); background: rgba({r},{g},{b},40); "
-            f"border-radius: 8px; padding: 2px 10px; font-size: 11px; font-weight: 600; }}"
-        )
-
-
-
-
-# -------------------------------------------------------------- add/edit ---
 
 class ShareDialog(QtWidgets.QDialog):
     def __init__(
@@ -131,7 +60,7 @@ class ShareDialog(QtWidgets.QDialog):
         ))
         self.new_profile_name = QtWidgets.QLineEdit()
         self.new_profile_name.setPlaceholderText("Optional reusable profile name")
-        self.pass_edit = QtWidgets.QLineEdit()
+        self.pass_edit = QtWidgets.QLineEdit(source.get("_password", ""))
         self.pass_edit.setEchoMode(QtWidgets.QLineEdit.Password)
         self.credential_policy_combo = QtWidgets.QComboBox()
         self.credential_policy_combo.addItem(
