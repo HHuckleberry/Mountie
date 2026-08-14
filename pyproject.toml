@@ -4,7 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mountie"
-version = "0.2.0"
+# Not set here: mountie/__init__.py's __version__ is the single source of
+# truth. scripts/bump_version.py is the only thing that should ever change
+# it - editing pyproject.toml itself would do nothing, since setuptools
+# reads the attribute directly (see [tool.setuptools.dynamic] below).
+dynamic = ["version"]
 description = "A GUI for mounting and managing SMB/CIFS, AFP, NFS, SFTP, and WebDAV network shares, with theming that follows your desktop."
 readme = "README.md"
 license = { text = "GPL-3.0-only" }
@@ -27,3 +31,9 @@ mountie = "mountie.app:main"
 
 [tool.setuptools.packages.find]
 include = ["mountie*"]
+
+[tool.setuptools.package-data]
+mountie = ["data/sbom.json"]
+
+[tool.setuptools.dynamic]
+version = { attr = "mountie.__version__" }

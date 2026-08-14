@@ -112,9 +112,10 @@ file is created with user-only permissions.
 
 The default policy for a fresh installation is **Ask every time**. Existing
 installations retain their previous storage behavior during migration so an
-update does not silently break configured shares. Change the global default in
-About and diagnostics; enabling permanent storage requires an explicit warning
-confirmation. A share or reusable credential profile can override the default.
+update does not silently break configured shares. Change the global default on
+the Credentials page in Settings; enabling permanent storage requires an
+explicit warning confirmation. A share or reusable credential profile can
+override the default.
 
 | Policy | Convenience | Security tradeoff |
 |---|---|---|
@@ -155,9 +156,11 @@ domain/workgroup separately from the username. Leave the domain/workgroup
 blank for standalone servers, local server accounts, and protocols that do
 not use one.
 
-The About and diagnostics button in the header shows the installed version,
-repository and issue links, configuration locations, and a viewer for the
-rotating application log.
+The Settings button in the header opens separate pages for appearance,
+credentials, diagnostics, and application information. It shows the installed
+version, repository and issue links, configuration locations, and a viewer for
+the rotating application log. Add/Edit Share is similarly divided into focused
+Connection, Credentials, and Disconnect tabs.
 
 ## Testing
 

@@ -50,6 +50,29 @@ class ConfigTests(unittest.TestCase):
                  self.assertRaises(settings.ConfigError):
                 settings.load_config()
 
+    def test_new_install_checks_for_updates_by_default(self):
+        self.assertTrue(settings.default_config()["check_for_updates"])
+
+    def test_legacy_config_missing_the_field_defaults_to_enabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            legacy = settings.default_config()
+            legacy.pop("check_for_updates")
+            path.write_text(json.dumps(legacy))
+            with mock.patch.object(settings, "CONFIG_PATH", path):
+                config = settings.load_config()
+        self.assertTrue(config["check_for_updates"])
+
+    def test_rejects_non_boolean_check_for_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            config = settings.default_config()
+            config["check_for_updates"] = "yes"
+            path.write_text(json.dumps(config))
+            with mock.patch.object(settings, "CONFIG_PATH", path), \
+                 self.assertRaises(settings.ConfigError):
+                settings.load_config()
+
     def test_legacy_default_preserves_permanent_storage_behavior(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"

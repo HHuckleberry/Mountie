@@ -99,11 +99,16 @@ class ShareDialog(QtWidgets.QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle("Edit Share" if existing else "Add Share")
+        self.resize(560, 500)
+        self.setMinimumSize(520, 450)
         self.existing = existing
         source = existing or initial or {}
         self.credential_profiles = credential_profiles or []
 
-        form = QtWidgets.QFormLayout(self)
+        outer = QtWidgets.QVBoxLayout(self)
+        tabs = QtWidgets.QTabWidget()
+        tabs.setObjectName("shareSettingsTabs")
+        outer.addWidget(tabs, 1)
 
         self.protocol_combo = QtWidgets.QComboBox()
         for key, label in PROTOCOLS:
@@ -161,19 +166,64 @@ class ShareDialog(QtWidgets.QDialog):
         self.disconnect_on_suspend = QtWidgets.QCheckBox("Disconnect before suspend")
         self.disconnect_on_suspend.setChecked(source.get("disconnect_on_suspend", False))
 
-        form.addRow("Protocol:", self.protocol_combo)
-        form.addRow("Label:", self.label_edit)
-        form.addRow("Host / IP:", self.host_edit)
-        form.addRow("Share / path:", self.share_edit)
-        form.addRow("Domain / workgroup:", self.domain_edit)
-        form.addRow("Username:", self.user_edit)
-        form.addRow("Credential profile:", self.profile_combo)
-        form.addRow("Save identity as profile:", self.new_profile_name)
-        form.addRow("Credential policy:", self.credential_policy_combo)
-        form.addRow("Password:", self.pass_edit)
-        form.addRow("Auto-disconnect:", self.disconnect_combo)
-        form.addRow("", self.disconnect_on_lock)
-        form.addRow("", self.disconnect_on_suspend)
+        connection_page = QtWidgets.QWidget()
+        connection = QtWidgets.QFormLayout(connection_page)
+        connection.setContentsMargins(18, 18, 18, 18)
+        connection.setVerticalSpacing(12)
+        connection.addRow("Protocol:", self.protocol_combo)
+        connection.addRow("Display name:", self.label_edit)
+        connection.addRow("Server:", self.host_edit)
+        connection.addRow("Share or path:", self.share_edit)
+        connection_hint = QtWidgets.QLabel(
+            "Use a hostname or IP address. Mountie safely encodes the share path for GVfs."
+        )
+        connection_hint.setObjectName("settingsHint")
+        connection_hint.setWordWrap(True)
+        connection.addRow("", connection_hint)
+        tabs.addTab(connection_page, "Connection")
+
+        credentials_page = QtWidgets.QWidget()
+        credentials = QtWidgets.QFormLayout(credentials_page)
+        credentials.setContentsMargins(18, 18, 18, 18)
+        credentials.setVerticalSpacing(12)
+        credentials.addRow("Credential profile:", self.profile_combo)
+        credentials.addRow("Domain / workgroup:", self.domain_edit)
+        credentials.addRow("Username:", self.user_edit)
+        credentials.addRow("Password storage:", self.credential_policy_combo)
+        credentials.addRow("Password:", self.pass_edit)
+        credentials.addRow("Save as new profile:", self.new_profile_name)
+        credentials_hint = QtWidgets.QLabel(
+            "Leave domain/workgroup blank for local accounts and shares that do not use one. "
+            "Passwords are stored only according to the selected policy."
+        )
+        credentials_hint.setObjectName("settingsHint")
+        credentials_hint.setWordWrap(True)
+        credentials.addRow("", credentials_hint)
+        tabs.addTab(credentials_page, "Credentials")
+
+        disconnect_page = QtWidgets.QWidget()
+        disconnect = QtWidgets.QVBoxLayout(disconnect_page)
+        disconnect.setContentsMargins(18, 18, 18, 18)
+        disconnect.setSpacing(12)
+        heading = QtWidgets.QLabel("Automatic disconnect")
+        heading.setObjectName("sectionTitle")
+        disconnect.addWidget(heading)
+        disconnect_hint = QtWidgets.QLabel(
+            "The timer measures total connected time, not file inactivity. "
+            "These options work while Mountie is running."
+        )
+        disconnect_hint.setObjectName("settingsHint")
+        disconnect_hint.setWordWrap(True)
+        disconnect.addWidget(disconnect_hint)
+        timer_row = QtWidgets.QHBoxLayout()
+        timer_row.addWidget(QtWidgets.QLabel("Disconnect:"))
+        timer_row.addWidget(self.disconnect_combo, 1)
+        disconnect.addLayout(timer_row)
+        disconnect.addWidget(self.disconnect_on_lock)
+        disconnect.addWidget(self.disconnect_on_suspend)
+        disconnect.addStretch()
+        tabs.addTab(disconnect_page, "Disconnect")
+
         self._update_password_hint(global_credential_policy)
         self._profile_changed(global_credential_policy)
 
@@ -182,7 +232,7 @@ class ShareDialog(QtWidgets.QDialog):
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        form.addRow(buttons)
+        outer.addWidget(buttons)
 
     def values(self):
         return {

@@ -71,6 +71,7 @@ def default_config():
         # Security-first for new installs. Existing configurations are
         # migrated below without silently changing their behavior.
         "credential_policy": CREDENTIAL_ASK,
+        "check_for_updates": True,
     }
 
 
@@ -87,6 +88,7 @@ def _read_config(path):
     config.setdefault("theme", THEME_SYSTEM)
     config.setdefault("link_dir", DEFAULT_LINK_DIR)
     config.setdefault("links_enabled", True)
+    config.setdefault("check_for_updates", True)
     legacy_policy = config.pop("never_save_credentials", None)
     if "credential_policy" not in config:
         # v1 saved passwords unless its opt-out was enabled. Preserve that
@@ -175,6 +177,8 @@ def _read_config(path):
         raise ConfigError(f"The link_dir field in {path} must be a string.")
     if not isinstance(config["links_enabled"], bool):
         raise ConfigError(f"The links_enabled field in {path} must be true or false.")
+    if not isinstance(config["check_for_updates"], bool):
+        raise ConfigError(f"The check_for_updates field in {path} must be true or false.")
     if config["credential_policy"] not in dict(CREDENTIAL_POLICIES):
         raise ConfigError(f"The credential_policy field in {path} is invalid.")
     return config

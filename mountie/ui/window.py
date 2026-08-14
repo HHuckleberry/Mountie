@@ -25,13 +25,13 @@ from mountie.mounts import (
     update_link,
     validate_share,
 )
+from mountie.update_check import UpdateChecker
 from mountie.settings import (
     CREDENTIAL_ASK,
     CREDENTIAL_PERMANENT,
     CREDENTIAL_SESSION,
     CREDENTIAL_USE_GLOBAL,
     ConfigError,
-    THEMES,
     default_config,
     credential_key,
     credential_profile,
@@ -42,9 +42,9 @@ from mountie.settings import (
     save_config,
     share_with_credentials,
 )
-from mountie.ui.about import AboutDialog, CredentialProfilesDialog
+from mountie.ui.about import CredentialProfilesDialog, SettingsDialog
 from mountie.ui.components import Bridge, ExternalMountCard, ShareCard, ShareDialog
-from mountie.ui.theme import appearance_icon, icon_button, retint_icon_button, tinted_icon
+from mountie.ui.theme import icon_button, retint_icon_button, tinted_icon
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -119,14 +119,13 @@ class MainWindow(QtWidgets.QMainWindow):
         actions_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         header.addWidget(actions_btn)
 
-        header.addWidget(self._build_theme_button())
-
-        about_btn = icon_button(
-            ["help-about-symbolic", "help-about", "preferences-system-symbolic"],
-            "About and diagnostics",
+        settings_btn = icon_button(
+            ["preferences-system-symbolic", "preferences-system", "emblem-system-symbolic"],
+            "Settings",
         )
-        about_btn.clicked.connect(self.show_about)
-        header.addWidget(about_btn)
+        settings_btn.setObjectName("settingsButton")
+        settings_btn.clicked.connect(self.show_settings)
+        header.addWidget(settings_btn)
 
         # Sits on the highlight color, so it tints against that, not the window.
         self.add_btn = add_btn = QtWidgets.QPushButton(" Add Share")
@@ -138,6 +137,22 @@ class MainWindow(QtWidgets.QMainWindow):
         add_btn.clicked.connect(self.add_share)
         header.addWidget(add_btn)
         layout.addLayout(header)
+
+        self.update_banner = QtWidgets.QFrame()
+        self.update_banner.setObjectName("updateBanner")
+        self.update_banner.setVisible(False)
+        banner_layout = QtWidgets.QHBoxLayout(self.update_banner)
+        banner_layout.setContentsMargins(10, 6, 10, 6)
+        self.update_banner_label = QtWidgets.QLabel()
+        self.update_banner_label.setWordWrap(True)
+        banner_layout.addWidget(self.update_banner_label, 1)
+        view_release_btn = QtWidgets.QPushButton("View Release")
+        view_release_btn.clicked.connect(self._open_update_release)
+        banner_layout.addWidget(view_release_btn)
+        dismiss_btn = icon_button(["window-close-symbolic", "window-close"], "Dismiss")
+        dismiss_btn.clicked.connect(lambda: self.update_banner.setVisible(False))
+        banner_layout.addWidget(dismiss_btn)
+        layout.addWidget(self.update_banner)
 
         self.search = QtWidgets.QLineEdit()
         self.search.setPlaceholderText("Search shares")
@@ -154,21 +169,65 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reload_list(query_status=True)
         self.theme.changed.connect(self._on_theme_changed)
 
+        self._pending_update_url = None
+        self.update_checker = None
+        if self.cfg.get("check_for_updates", True):
+            self._start_update_check()
+
     # ---- theme ----
 
-    def show_about(self):
-        dialog = AboutDialog(
+    def show_settings(self):
+        dialog = SettingsDialog(
             len(self.cfg["shares"]),
             self.cfg["credential_policy"],
-            self,
+            self.cfg["theme"],
+            len(self.cfg["credential_profiles"]),
+            self.manage_credential_profiles,
+            self.cfg.get("check_for_updates", True),
+            parent=self,
         )
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            self.set_credential_policy(dialog.credential_policy.currentData())
+            if self.set_credential_policy(dialog.credential_policy.currentData()):
+                self.set_theme(dialog.theme.currentData())
+            self.set_check_for_updates(dialog.check_for_updates.isChecked())
+
+    def show_about(self):
+        """Compatibility entry point retained for older callers."""
+        self.show_settings()
+
+    # ---- update check ----
+
+    def _start_update_check(self):
+        self.update_checker = UpdateChecker(self)
+        self.update_checker.finished.connect(self._on_update_check_done)
+        self.update_checker.check(__version__)
+
+    def _on_update_check_done(self, release):
+        if not release:
+            return
+        self._pending_update_url = release["url"]
+        self.update_banner_label.setText(
+            f"Mountie {release['version']} is available "
+            f"(you have {__version__})."
+        )
+        self.update_banner.setVisible(True)
+
+    def _open_update_release(self):
+        if self._pending_update_url:
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl(self._pending_update_url))
+
+    def set_check_for_updates(self, enabled):
+        if enabled == self.cfg.get("check_for_updates", True):
+            return
+        previous = self.cfg.get("check_for_updates", True)
+        self.cfg["check_for_updates"] = enabled
+        if not self._save_config():
+            self.cfg["check_for_updates"] = previous
 
     def set_credential_policy(self, policy):
         previous = self.cfg["credential_policy"]
         if policy == previous:
-            return
+            return True
         if policy == CREDENTIAL_PERMANENT:
             answer = QtWidgets.QMessageBox.warning(
                 self,
@@ -181,13 +240,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.Cancel,
             )
             if answer != QtWidgets.QMessageBox.Save:
-                return
+                return False
         self.cfg["credential_policy"] = policy
         if not self._save_config():
             self.cfg["credential_policy"] = previous
-            return
+            return False
         if policy == CREDENTIAL_PERMANENT:
-            return
+            return True
 
         failures = []
         cleared = set()
@@ -227,13 +286,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 "The new policy is active, but some older entries could not be removed.\n\n"
                 + "\n".join(failures),
             )
+        return True
 
-    def manage_credential_profiles(self):
+    def manage_credential_profiles(self, parent=None):
         dialog = CredentialProfilesDialog(
             self.cfg["credential_profiles"],
             self.cfg["shares"],
             self.cfg["credential_policy"],
-            self,
+            parent or self,
         )
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
@@ -363,24 +423,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.theme.set_mode(self.cfg["theme"])
         self.reload_list(query_status=True)
 
-    def _build_theme_button(self):
-        btn = icon_button([], "Appearance")
-        btn.icon_painter = appearance_icon
-        retint_icon_button(btn)
-        menu = QtWidgets.QMenu(self)
-        group = QtWidgets.QActionGroup(self)
-        group.setExclusive(True)
-        for key, label in THEMES:
-            action = menu.addAction(label)
-            action.setCheckable(True)
-            action.setChecked(key == self.cfg["theme"])
-            action.triggered.connect(lambda _, k=key: self.set_theme(k))
-            group.addAction(action)
-        btn.setMenu(menu)
-        btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
-        return btn
-
     def set_theme(self, mode):
+        if mode == self.cfg["theme"]:
+            return
         previous_mode = self.cfg["theme"]
         self.cfg["theme"] = mode
         if not self._save_config():

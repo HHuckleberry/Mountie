@@ -6,6 +6,7 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from mountie import __version__
 from mountie.ui.theme import initialize_icon_theme
 from mountie.ui.window import MainWindow
 
@@ -40,6 +41,9 @@ class WindowLifecycleTests(unittest.TestCase):
             "link_dir": "~/Shares",
             "links_enabled": False,
             "credential_policy": "permanent",
+            # Off so tests never spawn a real background network request;
+            # UpdateCheckerTests below cover the check itself.
+            "check_for_updates": False,
         }
         patches = (
             mock.patch("mountie.ui.window.load_config", return_value=config),
@@ -190,8 +194,31 @@ class WindowLifecycleTests(unittest.TestCase):
         window = self.make_window()
         version = window.findChild(QtWidgets.QLabel, "versionLabel")
         self.assertIsNotNone(version)
-        self.assertEqual(version.text(), "v0.2.0")
-        self.assertIn("0.2.0", window.windowTitle())
+        self.assertEqual(version.text(), f"v{__version__}")
+        self.assertIn(__version__, window.windowTitle())
+
+    def test_settings_dialog_applies_policy_and_theme(self):
+        window = self.make_window()
+        dialog = mock.Mock()
+        dialog.exec_.return_value = QtWidgets.QDialog.Accepted
+        dialog.credential_policy.currentData.return_value = "session"
+        dialog.theme.currentData.return_value = "dark"
+        dialog.check_for_updates.isChecked.return_value = False
+        with mock.patch("mountie.ui.window.SettingsDialog", return_value=dialog), \
+             mock.patch.object(
+                 window, "set_credential_policy", return_value=True
+             ) as set_policy, mock.patch.object(window, "set_theme") as set_theme, \
+             mock.patch.object(window, "set_check_for_updates") as set_updates:
+            window.show_settings()
+        set_policy.assert_called_once_with("session")
+        set_theme.assert_called_once_with("dark")
+        set_updates.assert_called_once_with(False)
+
+    def test_settings_button_replaces_separate_appearance_button(self):
+        window = self.make_window()
+        button = window.findChild(QtWidgets.QToolButton, "settingsButton")
+        self.assertIsNotNone(button)
+        self.assertEqual(button.toolTip(), "Settings")
 
     def test_refresh_shows_external_mount_as_read_only(self):
         window = self.make_window()
@@ -299,6 +326,68 @@ class WindowLifecycleTests(unittest.TestCase):
             self.assertEqual(len(window.cfg["shares"]), 1)
             callbacks[0](True, None, None)
         self.assertEqual(window.cfg["shares"], [])
+
+    def test_update_check_runs_on_startup_when_enabled(self):
+        config = {
+            "shares": [], "credential_profiles": [], "theme": "system",
+            "link_dir": "~/Shares", "links_enabled": False,
+            "credential_policy": "permanent", "check_for_updates": True,
+        }
+        with mock.patch("mountie.ui.window.load_config", return_value=config), \
+             mock.patch("mountie.ui.window.prune_links"), \
+             mock.patch("mountie.ui.window.is_mounted", return_value=False), \
+             mock.patch("mountie.ui.window.update_link", return_value=None), \
+             mock.patch("mountie.ui.window.external_network_mounts", return_value=[]), \
+             mock.patch("mountie.ui.window.UpdateChecker") as checker_cls:
+            window = MainWindow(FakeTheme())
+            self.addCleanup(window.close)
+        checker_cls.return_value.check.assert_called_once_with(__version__)
+
+    def test_update_check_skipped_on_startup_when_disabled(self):
+        with mock.patch("mountie.ui.window.UpdateChecker") as checker_cls:
+            self.make_window()
+        checker_cls.assert_not_called()
+
+    def test_update_banner_shown_when_a_release_is_available(self):
+        window = self.make_window()
+        self.assertFalse(window.update_banner.isVisibleTo(window))
+        window._on_update_check_done({"version": "9.9.9", "url": "https://example.com/r"})
+        self.assertTrue(window.update_banner.isVisibleTo(window))
+        self.assertIn("9.9.9", window.update_banner_label.text())
+
+    def test_update_banner_stays_hidden_when_already_current(self):
+        window = self.make_window()
+        window._on_update_check_done(None)
+        self.assertFalse(window.update_banner.isVisibleTo(window))
+
+    def test_dismissing_the_update_banner_hides_it(self):
+        window = self.make_window()
+        window._on_update_check_done({"version": "9.9.9", "url": "https://example.com/r"})
+        dismiss = next(
+            button for button in window.update_banner.findChildren(QtWidgets.QToolButton)
+            if button.toolTip() == "Dismiss"
+        )
+        dismiss.click()
+        self.assertFalse(window.update_banner.isVisibleTo(window))
+
+    def test_view_release_opens_the_release_url(self):
+        window = self.make_window()
+        window._on_update_check_done({"version": "9.9.9", "url": "https://example.com/r"})
+        with mock.patch.object(QtGui.QDesktopServices, "openUrl") as open_url:
+            window._open_update_release()
+        self.assertEqual(open_url.call_args.args[0].toString(), "https://example.com/r")
+
+    def test_settings_dialog_applies_check_for_updates_toggle(self):
+        window = self.make_window()
+        dialog = mock.Mock()
+        dialog.exec_.return_value = QtWidgets.QDialog.Accepted
+        dialog.credential_policy.currentData.return_value = window.cfg["credential_policy"]
+        dialog.theme.currentData.return_value = window.cfg["theme"]
+        dialog.check_for_updates.isChecked.return_value = True
+        with mock.patch("mountie.ui.window.SettingsDialog", return_value=dialog), \
+             mock.patch.object(window, "set_check_for_updates") as set_updates:
+            window.show_settings()
+        set_updates.assert_called_once_with(True)
 
     def test_mounted_edit_waits_for_unmount(self):
         window = self.make_window()

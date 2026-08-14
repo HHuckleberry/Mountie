@@ -2,11 +2,13 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mountie import __version__
 from mountie.logging_setup import LOG_PATH, read_log
+from mountie.sbom import format_sbom, load_sbom
 from mountie.settings import (
     BACKUP_PATH,
     CONFIG_PATH,
     CREDENTIAL_POLICIES,
     CREDENTIAL_USE_GLOBAL,
+    THEMES,
 )
 
 
@@ -42,6 +44,34 @@ class LogDialog(QtWidgets.QDialog):
         cursor = self.output.textCursor()
         cursor.movePosition(QtGui.QTextCursor.End)
         self.output.setTextCursor(cursor)
+
+
+class SbomDialog(QtWidgets.QDialog):
+    """Read-only view of the software bill of materials bundled at build time."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Software Bill of Materials")
+        self.resize(560, 480)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        sbom = load_sbom()
+
+        self.output = QtWidgets.QPlainTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        if sbom is None:
+            layout.addWidget(QtWidgets.QLabel(
+                "This build did not bundle a software bill of materials."
+            ))
+            self.output.setVisible(False)
+        else:
+            self.output.setPlainText(format_sbom(sbom))
+        layout.addWidget(self.output)
+
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
 
 
 class CredentialProfilesDialog(QtWidgets.QDialog):
@@ -234,47 +264,176 @@ class CredentialProfilesDialog(QtWidgets.QDialog):
         self.accept()
 
 
-class AboutDialog(QtWidgets.QDialog):
-    def __init__(self, share_count, credential_policy="ask", parent=None):
+class SettingsDialog(QtWidgets.QDialog):
+    """A compact, navigable home for preferences and diagnostics."""
+
+    def __init__(
+        self,
+        share_count,
+        credential_policy="ask",
+        theme="system",
+        profile_count=0,
+        manage_profiles=None,
+        check_for_updates=True,
+        parent=None,
+    ):
         super().__init__(parent)
-        self.setWindowTitle("About Mountie")
-        self.setMinimumWidth(520)
+        self.setWindowTitle("Mountie Settings")
+        self.resize(720, 470)
+        self.setMinimumSize(660, 420)
 
-        layout = QtWidgets.QVBoxLayout(self)
-        title = QtWidgets.QLabel("Mountie")
-        title.setObjectName("headerTitle")
-        layout.addWidget(title)
-        layout.addWidget(QtWidgets.QLabel(
-            f"Version {__version__}\nMount and manage network shares with GVfs."
+        outer = QtWidgets.QVBoxLayout(self)
+        body = QtWidgets.QHBoxLayout()
+        body.setSpacing(18)
+
+        self.navigation = QtWidgets.QListWidget()
+        self.navigation.setObjectName("settingsNavigation")
+        self.navigation.setFixedWidth(155)
+        self.navigation.setSpacing(3)
+        self.navigation.addItems(("General", "Credentials", "Diagnostics", "About"))
+        body.addWidget(self.navigation)
+
+        self.pages = QtWidgets.QStackedWidget()
+        self.pages.setObjectName("settingsPages")
+        body.addWidget(self.pages, 1)
+        outer.addLayout(body, 1)
+
+        self.pages.addWidget(self._general_page(theme, check_for_updates))
+        self.pages.addWidget(self._credentials_page(
+            credential_policy, profile_count, manage_profiles
         ))
+        self.pages.addWidget(self._diagnostics_page(share_count))
+        self.pages.addWidget(self._about_page())
+        self.navigation.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.navigation.setCurrentRow(0)
 
-        details = QtWidgets.QFormLayout()
-        details.addRow("Configured shares:", QtWidgets.QLabel(str(share_count)))
-        details.addRow("Configuration:", self._selectable(str(CONFIG_PATH)))
-        details.addRow("Backup:", self._selectable(str(BACKUP_PATH)))
-        details.addRow("Log:", self._selectable(str(LOG_PATH)))
-        layout.addLayout(details)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        outer.addWidget(buttons)
 
-        security = QtWidgets.QGroupBox("Credentials")
-        security_layout = QtWidgets.QVBoxLayout(security)
-        policy_row = QtWidgets.QHBoxLayout()
-        policy_row.addWidget(QtWidgets.QLabel("Default policy:"))
+    def _page(self, title, description):
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        layout.setContentsMargins(4, 4, 4, 4)
+        heading = QtWidgets.QLabel(title)
+        heading.setObjectName("settingsTitle")
+        layout.addWidget(heading)
+        summary = QtWidgets.QLabel(description)
+        summary.setObjectName("settingsDescription")
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+        layout.addSpacing(12)
+        return page, layout
+
+    def _general_page(self, theme, check_for_updates=True):
+        page, layout = self._page(
+            "General", "Choose how Mountie fits into your desktop."
+        )
+        card = QtWidgets.QGroupBox("Appearance")
+        form = QtWidgets.QFormLayout(card)
+        self.theme = QtWidgets.QComboBox()
+        for key, label in THEMES:
+            self.theme.addItem(label, key)
+        self.theme.setCurrentIndex(max(0, self.theme.findData(theme)))
+        form.addRow("Color scheme:", self.theme)
+        hint = QtWidgets.QLabel(
+            "System follows your desktop and updates automatically when its appearance changes."
+        )
+        hint.setObjectName("settingsHint")
+        hint.setWordWrap(True)
+        form.addRow("", hint)
+        layout.addWidget(card)
+
+        updates_card = QtWidgets.QGroupBox("Updates")
+        updates_layout = QtWidgets.QVBoxLayout(updates_card)
+        self.check_for_updates = QtWidgets.QCheckBox(
+            "Automatically check for updates on startup"
+        )
+        self.check_for_updates.setChecked(check_for_updates)
+        updates_layout.addWidget(self.check_for_updates)
+        updates_hint = QtWidgets.QLabel(
+            "Checks GitHub for a newer release and links to it. Never downloads "
+            "or installs anything automatically."
+        )
+        updates_hint.setObjectName("settingsHint")
+        updates_hint.setWordWrap(True)
+        updates_layout.addWidget(updates_hint)
+        layout.addWidget(updates_card)
+
+        layout.addStretch()
+        return page
+
+    def _credentials_page(self, credential_policy, profile_count, manage_profiles):
+        page, layout = self._page(
+            "Credentials",
+            "Control whether passwords are retained and manage identities shared by multiple connections.",
+        )
+        card = QtWidgets.QGroupBox("Password storage")
+        form = QtWidgets.QFormLayout(card)
         self.credential_policy = QtWidgets.QComboBox()
         for key, label in CREDENTIAL_POLICIES:
             self.credential_policy.addItem(label, key)
         self.credential_policy.setCurrentIndex(max(
             0, self.credential_policy.findData(credential_policy)
         ))
-        policy_row.addWidget(self.credential_policy, 1)
-        security_layout.addLayout(policy_row)
+        form.addRow("Default policy:", self.credential_policy)
         explanation = QtWidgets.QLabel(
             "Ask every time stores nothing. Remember until logout uses the keyring's "
             "temporary session collection. Permanent storage uses the default system keyring."
         )
+        explanation.setObjectName("settingsHint")
         explanation.setWordWrap(True)
-        security_layout.addWidget(explanation)
-        layout.addWidget(security)
+        form.addRow("", explanation)
+        layout.addWidget(card)
 
+        profiles = QtWidgets.QGroupBox("Credential profiles")
+        profile_layout = QtWidgets.QHBoxLayout(profiles)
+        count = QtWidgets.QLabel(
+            f"{profile_count} reusable profile{'s' if profile_count != 1 else ''}"
+        )
+        profile_layout.addWidget(count)
+        profile_layout.addStretch()
+        manage = QtWidgets.QPushButton("Manage Profiles…")
+        manage.setEnabled(manage_profiles is not None)
+        if manage_profiles is not None:
+            manage.clicked.connect(
+                lambda _checked=False: manage_profiles(self)
+            )
+        profile_layout.addWidget(manage)
+        layout.addWidget(profiles)
+        layout.addStretch()
+        return page
+
+    def _diagnostics_page(self, share_count):
+        page, layout = self._page(
+            "Diagnostics", "Locations and logs that can help troubleshoot Mountie."
+        )
+        card = QtWidgets.QGroupBox("Application data")
+        details = QtWidgets.QFormLayout(card)
+        details.addRow("Configured shares:", QtWidgets.QLabel(str(share_count)))
+        details.addRow("Configuration:", self._selectable(str(CONFIG_PATH)))
+        details.addRow("Backup:", self._selectable(str(BACKUP_PATH)))
+        details.addRow("Log:", self._selectable(str(LOG_PATH)))
+        layout.addWidget(card)
+        log = QtWidgets.QPushButton("View Application Log…")
+        log.clicked.connect(self._show_log)
+        layout.addWidget(log, 0, QtCore.Qt.AlignLeft)
+        sbom = QtWidgets.QPushButton("View Software Bill of Materials…")
+        sbom.clicked.connect(self._show_sbom)
+        layout.addWidget(sbom, 0, QtCore.Qt.AlignLeft)
+        layout.addStretch()
+        return page
+
+    def _about_page(self):
+        page, layout = self._page(
+            "Mountie", "Mount and manage network shares with GVfs."
+        )
+        version = QtWidgets.QLabel(f"Version {__version__}")
+        version.setObjectName("aboutVersion")
+        layout.addWidget(version)
         links = QtWidgets.QHBoxLayout()
         repository = QtWidgets.QPushButton("Repository")
         repository.clicked.connect(lambda: QtGui.QDesktopServices.openUrl(
@@ -284,19 +443,12 @@ class AboutDialog(QtWidgets.QDialog):
         issues.clicked.connect(lambda: QtGui.QDesktopServices.openUrl(
             QtCore.QUrl(ISSUES_URL)
         ))
-        log = QtWidgets.QPushButton("View Log")
-        log.clicked.connect(self._show_log)
         links.addWidget(repository)
         links.addWidget(issues)
-        links.addWidget(log)
+        links.addStretch()
         layout.addLayout(links)
-
-        buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        layout.addStretch()
+        return page
 
     @staticmethod
     def _selectable(text):
@@ -307,3 +459,10 @@ class AboutDialog(QtWidgets.QDialog):
 
     def _show_log(self):
         LogDialog(self).exec_()
+
+    def _show_sbom(self):
+        SbomDialog(self).exec_()
+
+
+# Kept as an import-compatible alias for callers from older integrations.
+AboutDialog = SettingsDialog

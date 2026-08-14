@@ -1,0 +1,202 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-08-14T05:51:31Z",
+    "tools": [
+      {
+        "name": "scripts/generate_sbom.py"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "mountie",
+      "version": "0.3.0",
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/HHuckleberry/Mountie.git"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "e43e3414a332743ee5f7a6a9437f0eacf4bc69e1"
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "framework",
+      "name": "org.kde.Platform",
+      "version": "5.15-25.08",
+      "scope": "required",
+      "description": "Flatpak runtime Mountie is sandboxed against."
+    },
+    {
+      "type": "framework",
+      "name": "com.riverbankcomputing.PyQt.BaseApp",
+      "version": "5.15-25.08",
+      "scope": "required",
+      "description": "Flatpak base app; supplies PyQt5 and its Qt libraries."
+    },
+    {
+      "type": "library",
+      "name": "setuptools",
+      "version": "69.5.1",
+      "scope": "required",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://files.pythonhosted.org/packages/f7/29/13965af254e3373bceae8fb9a0e6ea0d0e571171b80d6646932131d6439b/setuptools-69.5.1-py3-none-any.whl"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "c636ac361bc47580504644275c9ad802c50415c7522212252c033bd15f301f32"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wheel",
+      "version": "0.43.0",
+      "scope": "required",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://files.pythonhosted.org/packages/7d/cd/d7460c9a869b16c3dd4e1e403cce337df165368c71d6af229a74699622ce/wheel-0.43.0-py3-none-any.whl"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "55c570405f142630c6b9f72fe09d9b67cf1477fcf543ae5b8dcb1f5b7377da81"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "gobject-introspection",
+      "version": "1.80.1",
+      "scope": "required",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://download.gnome.org/sources/gobject-introspection/1.80/gobject-introspection-1.80.1.tar.xz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "a1df7c424e15bda1ab639c00e9051b9adf5cea1a9e512f8a603b53cd199bc6d8"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "libsecret",
+      "version": "0.21.4",
+      "scope": "required",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://download.gnome.org/sources/libsecret/0.21/libsecret-0.21.4.tar.xz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "163d08d783be6d4ab9a979ceb5a4fecbc1d9660d3c34168c581301cd53912b20"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "gvfs-client",
+      "version": "1.54.4",
+      "scope": "required",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://download.gnome.org/sources/gvfs/1.54/gvfs-1.54.4.tar.xz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "0893305c8ae375414907813a9e4c9435f6eb78bcc2ac6baaddb9391ba5c5b9ba"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pyproject-metadata",
+      "version": "0.9.1",
+      "scope": "required",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://files.pythonhosted.org/packages/7e/b1/8e63033b259e0a4e40dd1ec4a9fee17718016845048b43a36ec67d62e6fe/pyproject_metadata-0.9.1-py3-none-any.whl"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "ee5efde548c3ed9b75a354fc319d5afd25e9585fa918a34f62f904cc731973ad"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "meson-python",
+      "version": "0.18.0",
+      "scope": "required",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://files.pythonhosted.org/packages/28/58/66db620a8a7ccb32633de9f403fe49f1b63c68ca94e5c340ec5cceeb9821/meson_python-0.18.0-py3-none-any.whl"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "3b0fe051551cc238f5febb873247c0949cd60ded556efa130aa57021804868e2"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "python3-pygobject",
+      "version": "3.56.3",
+      "scope": "required",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://files.pythonhosted.org/packages/da/61/978c5fbca34f10a90df362502fbb5a005637909e7b5a0e9212349ea9d010/pygobject-3.56.3.tar.gz"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "12760e4a0e3d04b6eb95e06f7a27e362c826d567ea613373a92c003b6c70d2d6"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "PyQt5",
+      "version": "unpinned (see Flatpak base app / module list)",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "PyGObject",
+      "version": "unpinned (see Flatpak base app / module list)",
+      "scope": "required"
+    }
+  ]
+}

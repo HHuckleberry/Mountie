@@ -88,6 +88,59 @@ QListWidget::item:selected {
     font-size: 18px;
     font-weight: 700;
 }
+#settingsTitle {
+    font-size: 20px;
+    font-weight: 700;
+}
+#sectionTitle {
+    font-size: 14px;
+    font-weight: 600;
+}
+#settingsDescription, #settingsHint {
+    color: palette(placeholder-text);
+}
+#aboutVersion {
+    font-size: 14px;
+    font-weight: 600;
+}
+QListWidget#settingsNavigation {
+    background: palette(base);
+    border: 1px solid palette(mid);
+    border-radius: 10px;
+    padding: 6px;
+}
+QListWidget#settingsNavigation::item {
+    border-radius: 7px;
+    padding: 9px 10px;
+}
+QListWidget#settingsNavigation::item:selected {
+    background: palette(highlight);
+    color: palette(highlighted-text);
+}
+QGroupBox {
+    border: 1px solid palette(mid);
+    border-radius: 9px;
+    margin-top: 10px;
+    padding-top: 8px;
+    font-weight: 600;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px;
+}
+QTabWidget#shareSettingsTabs::pane {
+    border: 1px solid palette(mid);
+    border-radius: 9px;
+    background: palette(base);
+}
+QTabWidget#shareSettingsTabs QTabBar::tab {
+    padding: 8px 16px;
+}
+QTabWidget#shareSettingsTabs QTabBar::tab:selected {
+    color: palette(highlight);
+    font-weight: 600;
+}
 #versionLabel {
     color: palette(placeholder-text);
     font-size: 11px;

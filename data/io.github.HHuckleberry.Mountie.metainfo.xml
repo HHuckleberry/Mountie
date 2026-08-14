@@ -75,6 +75,17 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.3.0" date="2026-08-13">
+      <description>
+        <p>A clearer, more focused settings experience.</p>
+        <ul>
+          <li>Replace the crowded About dialog with dedicated settings pages</li>
+          <li>Group share options into Connection, Credentials and Disconnect tabs</li>
+          <li>Move appearance controls into the main settings window</li>
+          <li>Improve labels, explanations, spacing and visual hierarchy</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-08-12">
       <description>
         <p>Security-first credential handling and robust multi-share management.</p>

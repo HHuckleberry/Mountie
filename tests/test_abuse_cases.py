@@ -133,7 +133,8 @@ class UiAbuseTests(unittest.TestCase):
              mock.patch("mountie.ui.window.update_link", return_value=None), \
              mock.patch("mountie.ui.window.external_network_mounts", return_value=[]), \
              mock.patch("mountie.ui.window.get_password", return_value="secret"), \
-             mock.patch("mountie.ui.window.mount_share") as mount:
+             mock.patch("mountie.ui.window.mount_share") as mount, \
+             mock.patch("mountie.ui.window.UpdateChecker"):
             window = MainWindow(FakeTheme())
             self.addCleanup(window.close)
             window.on_toggle("share-id", True)
