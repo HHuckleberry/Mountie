@@ -323,5 +323,5 @@ modules:
       # Flathub manifests), but a commit-pinned git source can't drift.
       - type: git
         url: https://github.com/HHuckleberry/Mountie.git
-        tag: v0.3.1
-        commit: a66fbaa4b546038095fa60bd033dcff5eaa52a75
+        tag: v0.3.2
+        commit: 8dc5a685f553d52c6cf103187724b2a6caac69b0
