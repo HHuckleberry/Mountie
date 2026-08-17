@@ -188,5 +188,24 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(config_path.exists())
 
 
+class SharePresetsTests(unittest.TestCase):
+    ALLOWED_INITIAL_KEYS = {
+        "protocol", "label", "host", "share", "domain", "username",
+        "disconnect_after_minutes", "disconnect_on_lock", "disconnect_on_suspend",
+    }
+
+    def test_presets_use_known_protocols_and_fields(self):
+        protocol_keys = {key for key, _label in settings.PROTOCOLS}
+        for preset in settings.SHARE_PRESETS:
+            initial = preset["initial"]
+            with self.subTest(preset=preset["key"]):
+                self.assertIn(initial["protocol"], protocol_keys)
+                self.assertLessEqual(set(initial.keys()), self.ALLOWED_INITIAL_KEYS)
+
+    def test_preset_keys_are_unique(self):
+        keys = [preset["key"] for preset in settings.SHARE_PRESETS]
+        self.assertEqual(len(keys), len(set(keys)))
+
+
 if __name__ == "__main__":
     unittest.main()

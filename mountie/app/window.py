@@ -45,7 +45,6 @@ from mountie.settings import (
 from mountie.app.settings import CredentialProfilesDialog, SettingsDialog
 from mountie.app.components import (
     Bridge,
-    DiscoveryDialog,
     ExternalMountCard,
     ShareCard,
     ShareDialog,
@@ -171,16 +170,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.list.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
         self.list.setSpacing(6)
         layout.addWidget(self.list)
-
-        self.discover_btn = discover_btn = QtWidgets.QPushButton(" Discover")
-        discover_btn.setObjectName("discoverButton")
-        discover_btn.setIcon(tinted_icon(
-            self.palette().color(QtGui.QPalette.ButtonText),
-            "network-workgroup-symbolic", "network-workgroup",
-        ))
-        discover_btn.setToolTip("Find shares advertised on the local network")
-        discover_btn.clicked.connect(self.show_discovery)
-        layout.addWidget(discover_btn)
 
         self.reload_list(query_status=True)
         self.theme.changed.connect(self._on_theme_changed)
@@ -486,10 +475,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.palette().color(QtGui.QPalette.HighlightedText),
             "list-add-symbolic", "list-add",
         ))
-        self.discover_btn.setIcon(tinted_icon(
-            self.palette().color(QtGui.QPalette.ButtonText),
-            "network-workgroup-symbolic", "network-workgroup",
-        ))
 
     # ---- list population ----
 
@@ -524,22 +509,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.list.addItem(item)
         self.list.setItemWidget(item, card)
         self.external_cards.append(card)
-
-    def show_discovery(self):
-        dialog = DiscoveryDialog(self.cfg["shares"], self)
-        selected = []
-
-        def choose(initial):
-            selected.append(initial)
-            dialog.accept()
-
-        dialog.import_requested.connect(choose)
-        dialog.exec_()
-        if selected:
-            self.import_discovered(selected[0])
-
-    def import_discovered(self, initial):
-        self._import_share(initial, "Add Discovered Share")
 
     def import_external(self, initial):
         self._import_share(initial, "Import External Share")
@@ -842,6 +811,7 @@ class MainWindow(QtWidgets.QMainWindow):
             default_host=last_host,
             global_credential_policy=self.cfg["credential_policy"],
             credential_profiles=self.cfg["credential_profiles"],
+            configured_shares=self.cfg["shares"],
         )
         if dlg.exec_() != QtWidgets.QDialog.Accepted:
             return

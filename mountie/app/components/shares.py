@@ -11,8 +11,10 @@ from mountie.settings import (
     DEFAULT_PROTOCOL,
     DISCONNECT_OPTIONS,
     PROTOCOLS,
+    SHARE_PRESETS,
 )
 from mountie.app.components.common import StatusBadge, ToggleSwitch
+from mountie.app.components.discovery import DiscoveryPanel
 from mountie.app.theme import cosmic_tokens, icon_button
 
 
@@ -25,6 +27,7 @@ class ShareDialog(QtWidgets.QDialog):
         default_host="",
         global_credential_policy="ask",
         credential_profiles=None,
+        configured_shares=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Edit Share" if existing else "Add Share")
@@ -33,9 +36,21 @@ class ShareDialog(QtWidgets.QDialog):
         self.existing = existing
         source = existing or initial or {}
         self.credential_profiles = credential_profiles or []
+        self._configured_shares = configured_shares or []
+
+        # Only offer templates/discovery on a genuinely blank "Add Share" —
+        # editing an existing share or importing a discovered/external one
+        # already has real connection details that these shouldn't overwrite.
+        is_blank_add = existing is None and initial is None
+        self.template_combo = None
+        if is_blank_add:
+            self.template_combo = QtWidgets.QComboBox()
+            self.template_combo.addItem("Custom", None)
+            for preset in SHARE_PRESETS:
+                self.template_combo.addItem(preset["menu_label"], preset["key"])
 
         outer = QtWidgets.QVBoxLayout(self)
-        tabs = QtWidgets.QTabWidget()
+        self.tabs = tabs = QtWidgets.QTabWidget()
         tabs.setObjectName("shareSettingsTabs")
         outer.addWidget(tabs, 1)
 
@@ -95,10 +110,15 @@ class ShareDialog(QtWidgets.QDialog):
         self.disconnect_on_suspend = QtWidgets.QCheckBox("Disconnect before suspend")
         self.disconnect_on_suspend.setChecked(source.get("disconnect_on_suspend", False))
 
+        if self.template_combo is not None:
+            self.template_combo.currentIndexChanged.connect(self._template_changed)
+
         connection_page = QtWidgets.QWidget()
         connection = QtWidgets.QFormLayout(connection_page)
         connection.setContentsMargins(18, 18, 18, 18)
         connection.setVerticalSpacing(12)
+        if self.template_combo is not None:
+            connection.addRow("Start from:", self.template_combo)
         connection.addRow("Protocol:", self.protocol_combo)
         connection.addRow("Display name:", self.label_edit)
         connection.addRow("Server:", self.host_edit)
@@ -110,6 +130,12 @@ class ShareDialog(QtWidgets.QDialog):
         connection_hint.setWordWrap(True)
         connection.addRow("", connection_hint)
         tabs.addTab(connection_page, "Connection")
+
+        self.discovery_panel = None
+        if is_blank_add:
+            self.discovery_panel = DiscoveryPanel(self._configured_shares, self)
+            self.discovery_panel.import_requested.connect(self._on_discovered)
+            tabs.addTab(self.discovery_panel, "Discover")
 
         credentials_page = QtWidgets.QWidget()
         credentials = QtWidgets.QFormLayout(credentials_page)
@@ -179,6 +205,40 @@ class ShareDialog(QtWidgets.QDialog):
             "_new_profile_name": self.new_profile_name.text().strip(),
         }, self.pass_edit.text()
 
+    def _template_changed(self):
+        key = self.template_combo.currentData()
+        if key is None:
+            return
+        preset = next(preset for preset in SHARE_PRESETS if preset["key"] == key)
+        self._apply_preset_fields(preset["initial"])
+
+    def _on_discovered(self, initial):
+        self._apply_discovered_fields(initial)
+        self.tabs.setCurrentIndex(0)
+
+    def _apply_discovered_fields(self, initial):
+        self._apply_preset_fields(initial)
+        self.host_edit.setText(initial.get("host", ""))
+        self.share_edit.setText(initial.get("share", ""))
+        self.domain_edit.setText(initial.get("domain", ""))
+        self.user_edit.setText(initial.get("username", ""))
+        if "_password" in initial:
+            self.pass_edit.setText(initial["_password"])
+
+    def _apply_preset_fields(self, values):
+        self.protocol_combo.setCurrentIndex(max(
+            0, self.protocol_combo.findData(values.get("protocol", DEFAULT_PROTOCOL))
+        ))
+        self.label_edit.setText(values.get("label", ""))
+        minutes = values.get("disconnect_after_minutes", 0)
+        index = self.disconnect_combo.findData(minutes)
+        if index < 0 and minutes:
+            self.disconnect_combo.addItem(f"After {minutes} minutes", minutes)
+            index = self.disconnect_combo.count() - 1
+        self.disconnect_combo.setCurrentIndex(max(0, index))
+        self.disconnect_on_lock.setChecked(values.get("disconnect_on_lock", False))
+        self.disconnect_on_suspend.setChecked(values.get("disconnect_on_suspend", False))
+
     def _update_password_hint(self, global_policy):
         policy = self.credential_policy_combo.currentData()
         if policy == CREDENTIAL_USE_GLOBAL:
@@ -211,6 +271,11 @@ class ShareDialog(QtWidgets.QDialog):
                 0, self.credential_policy_combo.findData(policy)
             ))
         self._update_password_hint(global_policy)
+
+    def done(self, result):
+        if self.discovery_panel is not None:
+            self.discovery_panel.cancel_pending()
+        super().done(result)
 
 
 # ------------------------------------------------------------ main window --

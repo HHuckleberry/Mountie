@@ -220,52 +220,14 @@ class WindowLifecycleTests(unittest.TestCase):
         self.assertIsNotNone(button)
         self.assertEqual(button.toolTip(), "Settings")
 
-    def test_discover_button_opens_passive_discovery_dialog(self):
+    def test_add_share_offers_configured_shares_to_the_dialog(self):
         window = self.make_window()
         dialog = mock.Mock()
-        with mock.patch("mountie.app.window.DiscoveryDialog", return_value=dialog) as cls:
-            window.discover_btn.click()
-        cls.assert_called_once_with(window.cfg["shares"], window)
-        dialog.import_requested.connect.assert_called_once()
-        dialog.exec_.assert_called_once()
-
-    def test_discover_button_is_below_the_share_list(self):
-        window = self.make_window()
-        layout = window.centralWidget().layout()
-        self.assertGreater(
-            layout.indexOf(window.discover_btn),
-            layout.indexOf(window.list),
-        )
-
-    def test_discovery_selection_closes_browser_before_opening_share_dialog(self):
-        window = self.make_window()
-        initial = {
-            "protocol": "smb", "label": "Found", "host": "nas.local",
-            "share": "data", "domain": "", "username": "",
-        }
-        dialog = mock.Mock()
-
-        def emit_selection():
-            callback = dialog.import_requested.connect.call_args.args[0]
-            callback(initial)
-            return QtWidgets.QDialog.Accepted
-
-        dialog.exec_.side_effect = emit_selection
-        with mock.patch("mountie.app.window.DiscoveryDialog", return_value=dialog), \
-             mock.patch.object(window, "import_discovered") as imported:
-            window.show_discovery()
-        dialog.accept.assert_called_once()
-        imported.assert_called_once_with(initial)
-
-    def test_discovered_share_uses_existing_import_flow(self):
-        window = self.make_window()
-        initial = {
-            "protocol": "smb", "label": "Found", "host": "nas.local",
-            "share": "data", "domain": "", "username": "",
-        }
-        with mock.patch.object(window, "_import_share") as import_share:
-            window.import_discovered(initial)
-        import_share.assert_called_once_with(initial, "Add Discovered Share")
+        dialog.exec_.return_value = QtWidgets.QDialog.Rejected
+        with mock.patch("mountie.app.window.ShareDialog", return_value=dialog) as factory:
+            window.add_share()
+        _args, kwargs = factory.call_args
+        self.assertEqual(kwargs["configured_shares"], window.cfg["shares"])
 
     def test_refresh_shows_external_mount_as_read_only(self):
         window = self.make_window()

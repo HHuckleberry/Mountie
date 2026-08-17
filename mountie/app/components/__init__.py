@@ -4,7 +4,7 @@ from mountie.app.components.common import StatusBadge, ToggleSwitch
 from mountie.app.components.discovery import (
     DiscoveryCard,
     DiscoveryCredentialsDialog,
-    DiscoveryDialog,
+    DiscoveryPanel,
 )
 from mountie.app.components.shares import (
     Bridge,
@@ -17,7 +17,7 @@ __all__ = [
     "Bridge",
     "DiscoveryCard",
     "DiscoveryCredentialsDialog",
-    "DiscoveryDialog",
+    "DiscoveryPanel",
     "ExternalMountCard",
     "ShareCard",
     "ShareDialog",

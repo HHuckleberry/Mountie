@@ -7,11 +7,12 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 from PyQt5 import QtCore, QtWidgets
 
 from mountie.discovery import DiscoveryResult
+from mountie.settings import SHARE_PRESETS
 from mountie.app.settings import SbomDialog, SettingsDialog
 from mountie.app.components import (
     DiscoveryCard,
     DiscoveryCredentialsDialog,
-    DiscoveryDialog,
+    DiscoveryPanel,
     ShareDialog,
 )
 
@@ -91,8 +92,18 @@ class ShareDialogLayoutTests(unittest.TestCase):
         self.assertIsNotNone(tabs)
         self.assertEqual(
             [tabs.tabText(index) for index in range(tabs.count())],
-            ["Connection", "Credentials", "Disconnect"],
+            ["Connection", "Discover", "Credentials", "Disconnect"],
         )
+
+    def test_discover_tab_is_absent_when_editing_or_prefilled(self):
+        for dialog in (
+            ShareDialog(existing={"label": "Existing"}, global_credential_policy="ask"),
+            ShareDialog(initial={"host": "nas.local"}, global_credential_policy="ask"),
+        ):
+            self.addCleanup(dialog.close)
+            self.assertIsNone(dialog.discovery_panel)
+            tabs = dialog.findChild(QtWidgets.QTabWidget, "shareSettingsTabs")
+            self.assertNotIn("Discover", [tabs.tabText(i) for i in range(tabs.count())])
 
     def test_discovery_password_is_transiently_prefilled(self):
         dialog = ShareDialog(
@@ -104,8 +115,85 @@ class ShareDialogLayoutTests(unittest.TestCase):
         self.assertEqual(password, "temporary-secret")
         self.assertNotIn("_password", values)
 
+    def test_template_picker_offers_every_preset_on_a_blank_dialog(self):
+        dialog = ShareDialog(global_credential_policy="ask")
+        self.addCleanup(dialog.close)
+        self.assertIsNotNone(dialog.template_combo)
+        self.assertEqual(
+            [dialog.template_combo.itemText(i) for i in range(dialog.template_combo.count())],
+            ["Custom"] + [preset["menu_label"] for preset in SHARE_PRESETS],
+        )
 
-class DiscoveryDialogTests(unittest.TestCase):
+    def test_template_picker_is_absent_when_editing(self):
+        dialog = ShareDialog(existing={"label": "Existing"}, global_credential_policy="ask")
+        self.addCleanup(dialog.close)
+        self.assertIsNone(dialog.template_combo)
+
+    def test_template_picker_is_absent_when_prefilled_from_discovery(self):
+        dialog = ShareDialog(initial={"host": "nas.local"}, global_credential_policy="ask")
+        self.addCleanup(dialog.close)
+        self.assertIsNone(dialog.template_combo)
+
+    def test_choosing_a_template_prefills_its_declared_fields(self):
+        for preset in SHARE_PRESETS:
+            with self.subTest(preset=preset["key"]):
+                dialog = ShareDialog(global_credential_policy="ask")
+                self.addCleanup(dialog.close)
+                index = dialog.template_combo.findData(preset["key"])
+                dialog.template_combo.setCurrentIndex(index)
+                values, _password = dialog.values()
+                for field, expected in preset["initial"].items():
+                    self.assertEqual(values[field], expected)
+
+    def test_switching_back_to_custom_does_not_revert_a_chosen_template(self):
+        # "Custom" is a no-op entry, not a reset button — once a template has
+        # filled in fields, picking "Custom" again leaves them as they are.
+        dialog = ShareDialog(global_credential_policy="ask")
+        self.addCleanup(dialog.close)
+        dialog.template_combo.setCurrentIndex(
+            dialog.template_combo.findData(SHARE_PRESETS[0]["key"])
+        )
+        dialog.template_combo.setCurrentIndex(dialog.template_combo.findData(None))
+        self.assertEqual(dialog.label_edit.text(), SHARE_PRESETS[0]["initial"]["label"])
+
+    def test_discover_tab_gets_the_configured_shares_list(self):
+        configured = [{"id": "existing", "host": "nas.local"}]
+        dialog = ShareDialog(global_credential_policy="ask", configured_shares=configured)
+        self.addCleanup(dialog.close)
+        self.assertIsInstance(dialog.discovery_panel, DiscoveryPanel)
+        self.assertEqual(dialog.discovery_panel._configured_shares, configured)
+
+    def test_a_discovered_share_fills_in_connection_fields_and_switches_tabs(self):
+        found = {
+            "protocol": "sftp", "label": "Found Share", "host": "nas.local",
+            "share": "data", "domain": "WORK", "username": "alice",
+            "_password": "secret",
+        }
+        dialog = ShareDialog(global_credential_policy="ask")
+        self.addCleanup(dialog.close)
+        dialog.tabs.setCurrentIndex(dialog.tabs.indexOf(dialog.discovery_panel))
+
+        dialog.discovery_panel.import_requested.emit(found)
+
+        values, password = dialog.values()
+        self.assertEqual(values["protocol"], "sftp")
+        self.assertEqual(values["label"], "Found Share")
+        self.assertEqual(values["host"], "nas.local")
+        self.assertEqual(values["share"], "data")
+        self.assertEqual(values["domain"], "WORK")
+        self.assertEqual(values["username"], "alice")
+        self.assertEqual(password, "secret")
+        self.assertEqual(dialog.tabs.currentWidget(), dialog.tabs.widget(0))
+
+    def test_closing_the_dialog_cancels_any_pending_discovery(self):
+        dialog = ShareDialog(global_credential_policy="ask")
+        self.addCleanup(dialog.close)
+        with mock.patch.object(dialog.discovery_panel, "cancel_pending") as cancel:
+            dialog.reject()
+        cancel.assert_called_once()
+
+
+class DiscoveryPanelTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
@@ -212,7 +300,7 @@ class DiscoveryDialogTests(unittest.TestCase):
             authenticated.append((uri, credentials.copy()))
             done("")
 
-        dialog = DiscoveryDialog(
+        dialog = DiscoveryPanel(
             [], discover_fn=discover, authenticate_fn=authenticate
         )
         self.addCleanup(dialog.close)
@@ -257,7 +345,7 @@ class DiscoveryDialogTests(unittest.TestCase):
         self.assertFalse(button.isEnabled())
 
     def test_unavailable_backend_has_a_recoverable_message(self):
-        dialog = DiscoveryDialog(
+        dialog = DiscoveryPanel(
             [], discover_fn=lambda _shares, _uri, _cancel, done: done([], "")
         )
         self.addCleanup(dialog.close)
@@ -267,7 +355,7 @@ class DiscoveryDialogTests(unittest.TestCase):
         self.assertTrue(dialog.refresh_btn.isEnabled())
 
     def test_closing_cancels_pending_discovery(self):
-        dialog = DiscoveryDialog(
+        dialog = DiscoveryPanel(
             [], discover_fn=lambda _shares, _uri, _cancel, done: done([], "")
         )
         cancellable = dialog._cancellable
@@ -275,7 +363,7 @@ class DiscoveryDialogTests(unittest.TestCase):
         self.assertTrue(cancellable.is_cancelled())
 
     def test_stalled_backend_times_out_and_can_be_retried(self):
-        dialog = DiscoveryDialog(
+        dialog = DiscoveryPanel(
             [], discover_fn=lambda _shares, _uri, _cancel, _done: None
         )
         self.addCleanup(dialog.close)

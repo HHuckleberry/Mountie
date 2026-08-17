@@ -36,6 +36,50 @@ DISCONNECT_OPTIONS = (
     (480, "After 8 hours"),
 )
 
+# Starting points for the "Add Share" dialog. Each entry's "initial" dict
+# is passed straight through as ShareDialog's `initial=` argument, so its
+# keys must be a subset of what ShareDialog reads from `source.get(...)`.
+# host/share/domain/username are deliberately omitted so those fields stay
+# blank for the user to fill in.
+SHARE_PRESETS = (
+    {
+        "key": "media",
+        "menu_label": "Media Library",
+        "description": "Stays connected for streaming (Plex, Jellyfin, etc.)",
+        "initial": {
+            "protocol": "smb",
+            "label": "Media Library",
+            "disconnect_after_minutes": 0,
+            "disconnect_on_lock": False,
+            "disconnect_on_suspend": False,
+        },
+    },
+    {
+        "key": "backup",
+        "menu_label": "Backup Target",
+        "description": "Disconnects automatically before your laptop sleeps",
+        "initial": {
+            "protocol": "smb",
+            "label": "Backup",
+            "disconnect_after_minutes": 0,
+            "disconnect_on_lock": False,
+            "disconnect_on_suspend": True,
+        },
+    },
+    {
+        "key": "nas",
+        "menu_label": "NAS Folder",
+        "description": "General-purpose network folder",
+        "initial": {
+            "protocol": "smb",
+            "label": "NAS",
+            "disconnect_after_minutes": 0,
+            "disconnect_on_lock": False,
+            "disconnect_on_suspend": False,
+        },
+    },
+)
+
 CREDENTIAL_ASK = "ask"
 CREDENTIAL_SESSION = "session"
 CREDENTIAL_PERMANENT = "permanent"

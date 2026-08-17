@@ -75,6 +75,15 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.3.2" date="2026-08-16">
+      <description>
+        <p>Add Share now offers templates and network discovery from one picker.</p>
+        <ul>
+          <li>Add a Start from picker to Add Share with Media Library, Backup Target, and NAS Folder templates</li>
+          <li>Move network discovery into Add Share instead of a separate Discover button</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.1" date="2026-08-14">
       <description>
         <p>Discover and add network-advertised shares.</p>

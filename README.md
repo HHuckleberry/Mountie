@@ -9,6 +9,11 @@ settings portal — so it looks at home on [COSMIC][cosmic], GNOME or KDE
 alike.
 
 - **Add / edit / remove shares** for any host and protocol GVfs supports.
+- **Guided share creation**: Add Share opens with its own **Discover** tab for
+  browsing shares advertised on the network, and a **Start from** picker for
+  ready-made templates (Media Library, Backup Target, NAS Folder) that
+  pre-fill a sensible protocol, label, and disconnect policy — or ignore both
+  and fill in a blank form as before.
 - **One-click toggle** to mount/unmount each share (no `sudo`/`pkexec` needed
   — mounts land in the per-user GVfs mount namespace via `gio`).
 - **Security-first credential policies**: new installations ask every time by
@@ -131,26 +136,39 @@ shares use them. A profile cannot be removed while a share still references it.
 
 ## Usage
 
-Run `mountie`, then **Add Share** with a label, host, share/path, and
-optional credentials. Flip the toggle to mount or unmount. Status badges
-show connected/disconnected/error state; use the refresh button to
-re-check all shares against what's actually mounted. Refresh also shows
-network connections created by another application as read-only **External**
-rows. Use **Import** to adopt an eligible connection as a normal Mountie share.
+Run `mountie`, then **Add Share**. Its Connection tab has a **Start from**
+picker for templates, and there's a whole **Discover** tab next to it for
+browsing the network — both live on the Add Share screen itself, nothing
+pops up separately:
+
+- The **Discover** tab asks the desktop's GVfs network service for devices
+  and shares advertised on the local network. Discovery is passive: Mountie
+  does not scan address ranges, test ports, or connect automatically. Device
+  icons supplied by the desktop are shown when available. Choose **Sign In &
+  Browse** on a server to enter one-use credentials, explore its shares, and
+  select the exact share to save — GVfs is told not to retain the browsing
+  password. **Add…** remains available when you already know the share name
+  and only want the discovered server address prefilled. Either way, the
+  picked values fill in the Connection tab and Mountie switches you back to
+  it, where its normal password storage policy applies. Availability depends
+  on the desktop's installed GVfs discovery backends, so Custom/template
+  entry remains available when network browsing is unsupported.
+- The **Start from** picker's **Media Library**, **Backup Target**, and
+  **NAS Folder** entries pre-fill a protocol, label, and disconnect policy
+  suited to that use case (for example, Backup Target disconnects
+  automatically before your laptop suspends). You still fill in the host and
+  share/path yourself, and every field stays editable afterward.
+
+Both only appear on a genuinely new share — editing an existing one, or
+importing an External connection (below), skips straight to its real values.
+
+Flip the toggle to mount or unmount. Status badges show
+connected/disconnected/error state; use the refresh button to re-check all
+shares against what's actually mounted. Refresh also shows network
+connections created by another application as read-only **External** rows.
+Use **Import** to adopt an eligible connection as a normal Mountie share.
 Mountie can recover the target and sometimes its username, but another
 application's password is never exposed, so you may need to enter it again.
-
-Use **Discover** to ask the desktop's GVfs network service for devices and
-shares advertised on the local network. Discovery is passive: Mountie does not
-scan address ranges, test ports, or connect automatically. Device icons supplied
-by the desktop are shown when available. Choose **Sign In & Browse** on a server
-to enter one-use credentials, explore its shares, and select the exact share to
-save. GVfs is told not to retain the browsing password; the selected credentials
-are passed to the ordinary Add Share dialog, where Mountie's normal password
-storage policy applies. **Add…** remains available when you already know the
-share name and only want the discovered server address prefilled.
-Availability depends on the desktop's installed GVfs discovery backends, so
-manual Add Share remains available when network browsing is unsupported.
 
 Use the connection-actions menu for Connect All, Disconnect All, credential
 profiles, and configuration import/export. Bulk operations run one at a time so
@@ -237,6 +255,10 @@ Completed reliability and security work:
 
 Possible follow-up work:
 
+- [ ] Add cloud-share integrations through a provider-neutral backend layer;
+  begin with the researched [cloud integration design](docs/cloud-integrations.md)
+  and an opt-in rclone prototype rather than adding cloud accounts as URI
+  protocols.
 - [ ] Evaluate desktop-specific idle/activity APIs before offering an
   activity-based disconnect mode; do not label a fixed timer as idle detection.
 - [ ] Evaluate an opt-in background/autostart mode through the desktop portal so

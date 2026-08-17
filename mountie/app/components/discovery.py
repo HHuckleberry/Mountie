@@ -159,8 +159,8 @@ class DiscoveryCard(QtWidgets.QFrame):
         return initial
 
 
-class DiscoveryDialog(QtWidgets.QDialog):
-    """Browse GVfs advertisements, mounting a chosen server only on request."""
+class DiscoveryPanel(QtWidgets.QWidget):
+    """Browse GVfs advertisements inline, mounting a chosen server only on request."""
 
     import_requested = QtCore.pyqtSignal(dict)
     DISCOVERY_TIMEOUT_MS = 10000
@@ -169,9 +169,6 @@ class DiscoveryDialog(QtWidgets.QDialog):
             self, configured_shares, parent=None, discover_fn=discover_network_async,
             authenticate_fn=authenticate_network_uri_async):
         super().__init__(parent)
-        self.setWindowTitle("Discover Network Shares")
-        self.resize(680, 500)
-        self.setMinimumSize(560, 400)
         self._configured_shares = configured_shares
         self._discover_fn = discover_fn
         self._authenticate_fn = authenticate_fn
@@ -187,6 +184,8 @@ class DiscoveryDialog(QtWidgets.QDialog):
         self._timeout_timer.timeout.connect(self._on_timeout)
 
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
         heading = QtWidgets.QLabel("Advertised Network Shares")
         heading.setObjectName("settingsTitle")
         layout.addWidget(heading)
@@ -222,10 +221,6 @@ class DiscoveryDialog(QtWidgets.QDialog):
         self.results.setFocusPolicy(QtCore.Qt.NoFocus)
         self.results.setSpacing(6)
         layout.addWidget(self.results, 1)
-
-        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
 
         self.bridge = DiscoveryBridge(self)
         self.bridge.completed.connect(self._on_finished)
@@ -396,9 +391,10 @@ class DiscoveryDialog(QtWidgets.QDialog):
         self._current_credentials = None
         self._history.clear()
 
-    def done(self, result):
+    def cancel_pending(self):
+        """Called by whatever embeds this panel when it goes away, so an
+        in-flight GVfs lookup doesn't keep running against a closed dialog."""
         self._cancel_discovery()
-        super().done(result)
 
     def closeEvent(self, event):
         self._cancel_discovery()
