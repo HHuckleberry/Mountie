@@ -158,8 +158,16 @@ QPushButton#primaryButton {
     color: palette(highlighted-text);
     border: none;
     border-radius: 8px;
-    padding: 7px 16px;
+    /* Extra right padding: this button carries a dropdown menu (Network
+       Share / ISO Image), and a custom stylesheet stops Qt from
+       automatically reserving space for the menu-indicator arrow it draws
+       over the button - without this the text gets clipped by the arrow. */
+    padding: 7px 28px 7px 16px;
     font-weight: 600;
+}
+QPushButton#primaryButton::menu-indicator {
+    subcontrol-position: right center;
+    right: 10px;
 }
 QPushButton#primaryButton:hover {
     background: palette(highlight);

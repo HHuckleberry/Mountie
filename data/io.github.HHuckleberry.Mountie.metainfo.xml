@@ -77,6 +77,15 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.4.7" date="2026-08-18">
+      <description>
+        <p>Fix the Add button's dropdown-menu arrow clipping its label.</p>
+        <ul>
+          <li>Fix the Add button's text being clipped by its dropdown-menu indicator</li>
+          <li>Refresh README/store screenshots to match the current UI (templates, Discover tab, native mount, ISO images)</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.6" date="2026-08-18">
       <description>
         <p>Fix a startup crash when an ISO image share is configured.</p>
