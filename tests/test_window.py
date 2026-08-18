@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -58,6 +59,39 @@ class WindowLifecycleTests(unittest.TestCase):
         window = MainWindow(FakeTheme())
         self.addCleanup(window.close)
         return window
+
+    def test_startup_with_an_iso_and_a_network_share_does_not_crash(self):
+        # Regression: reload_list() at startup calls the real
+        # external_network_mounts() (not mocked here, unlike make_window's
+        # default), which used to KeyError on any ISO-kind share because
+        # share_uri() didn't recognize non-network entries. The image file
+        # must actually exist, or validate_share's own "file not found"
+        # check masks the bug this test targets.
+        with tempfile.NamedTemporaryFile(suffix=".iso") as image:
+            config = {
+                "shares": [SHARE.copy(), {
+                    "id": "iso-1", "kind": "iso", "label": "Install disc",
+                    "path": image.name,
+                }],
+                "credential_profiles": [],
+                "theme": "system",
+                "link_dir": "~/Shares",
+                "links_enabled": False,
+                "credential_policy": "permanent",
+                "check_for_updates": False,
+            }
+            patches = (
+                mock.patch("mountie.app.window.load_config", return_value=config),
+                mock.patch("mountie.app.window.prune_links"),
+                mock.patch("mountie.app.window.is_mounted", return_value=False),
+                mock.patch("mountie.app.window.update_link", return_value=None),
+            )
+            for patcher in patches:
+                patcher.start()
+                self.addCleanup(patcher.stop)
+            window = MainWindow(FakeTheme())
+            self.addCleanup(window.close)
+        self.assertEqual(len(window.cards), 2)
 
     def test_breeze_is_the_icon_fallback(self):
         with mock.patch.object(QtGui.QIcon, "themeName", return_value="hicolor"), \
@@ -228,6 +262,29 @@ class WindowLifecycleTests(unittest.TestCase):
             window.add_share()
         _args, kwargs = factory.call_args
         self.assertEqual(kwargs["configured_shares"], window.cfg["shares"])
+
+    def test_add_network_share_after_iso_uses_last_network_host(self):
+        window = self.make_window()
+        window.cfg["shares"].append({
+            "id": "disc", "kind": "iso", "label": "Disc", "path": "/data/disc.iso",
+        })
+        dialog = mock.Mock()
+        dialog.exec_.return_value = QtWidgets.QDialog.Rejected
+        with mock.patch("mountie.app.window.ShareDialog", return_value=dialog) as factory:
+            window.add_share()
+        self.assertEqual(factory.call_args.kwargs["default_host"], "server.example")
+
+    def test_iso_connect_does_not_touch_credentials(self):
+        window = self.make_window()
+        image = {"id": "disc", "kind": "iso", "label": "Disc", "path": "/data/disc.iso"}
+        window.cfg["shares"] = [image]
+        window.reload_list(query_status=True)
+        with mock.patch("mountie.app.window.get_password") as password, \
+             mock.patch("mountie.app.window.mount_share") as mount:
+            window.on_toggle("disc", True)
+        password.assert_not_called()
+        mount.assert_called_once()
+        self.assertEqual(mount.call_args.args[1], "")
 
     def test_refresh_shows_external_mount_as_read_only(self):
         window = self.make_window()

@@ -79,6 +79,13 @@ finish-args:
   - --talk-name=org.freedesktop.secrets
   - --talk-name=org.freedesktop.ScreenSaver
   - --system-talk-name=org.freedesktop.login1
+  # ISO images are attached and mounted read-only by the host's UDisks2
+  # client. Its standard mountpoints live here and must be visible so the
+  # stable ~/Shares links work inside and outside the sandbox.
+  - --filesystem=/run/media:ro
+  # UDisks uses /media on Ubuntu/Pop!_OS and /run/media on many other
+  # distributions; both are read-only because ISO contents are data sources.
+  - --filesystem=/media:ro
   # Native (opt-in, per-share) kernel CIFS mounts require running a
   # root-owned helper on the host via pkexec; there is no portal for this
   # and the sandbox cannot invoke privileged host commands directly, so

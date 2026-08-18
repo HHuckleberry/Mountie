@@ -77,6 +77,48 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.4.6" date="2026-08-18">
+      <description>
+        <p>Fix a startup crash when an ISO image share is configured.</p>
+        <ul>
+          <li>Fix share_uri() KeyError on ISO-kind shares that crashed app startup and network-share discovery</li>
+          <li>Add regression coverage for mixed network/ISO share configurations</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.4.5" date="2026-08-18">
+      <description>
+        <p>Expose UDisks ISO mounts correctly across supported Linux layouts.</p>
+        <ul>
+          <li>Allow read-only Flatpak access to ISO mounts under both /media and /run/media</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.4.4" date="2026-08-18">
+      <description>
+        <p>Mount Flatpak-selected ISO images from their real host files.</p>
+        <ul>
+          <li>Resolve document-portal grants to their authorized origin paths before creating UDisks loop devices</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.4.3" date="2026-08-18">
+      <description>
+        <p>Fix ISO mounting from Flatpak file selections.</p>
+        <ul>
+          <li>Preserve host-visible document-portal paths when passing ISO images to UDisks2</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.4.2" date="2026-08-18">
+      <description>
+        <p>Mount ISO images as read-only local data sources.</p>
+        <ul>
+          <li>Add saved ISO image sources with read-only UDisks2 mounting and clean loop-device ejection</li>
+          <li>Expose mounted ISO contents through the same stable local links as network shares</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-08-17">
       <description>
         <p>Harden and document the native SMB/CIFS mount backend.</p>

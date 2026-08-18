@@ -1,3 +1,3 @@
 """Mountie: a small GUI for mounting and managing network shares."""
 
-__version__ = "0.4.1"
+__version__ = "0.4.6"

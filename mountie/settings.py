@@ -27,6 +27,8 @@ PROTOCOLS = [
     ("davs", "WebDAV (secure)"),
 ]
 DEFAULT_PROTOCOL = "smb"
+SOURCE_NETWORK = "network"
+SOURCE_ISO = "iso"
 
 BACKEND_GVFS = "gvfs"
 BACKEND_NATIVE = "native"
@@ -98,7 +100,7 @@ CREDENTIAL_POLICIES = (
     (CREDENTIAL_SESSION, "Remember until logout"),
     (CREDENTIAL_PERMANENT, "Save in system keyring"),
 )
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 
 CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
 CONFIG_DIR = CONFIG_HOME / "mountie"
@@ -156,7 +158,6 @@ def _read_config(path):
         raise ConfigError(f"The credential_profiles field in {path} must be a list.")
     if config["theme"] not in dict(THEMES):
         raise ConfigError(f"The theme field in {path} is invalid.")
-    required_share_fields = ("id", "label", "host", "share")
     profile_ids = set()
     profile_labels = set()
     for index, profile in enumerate(config["credential_profiles"], start=1):
@@ -183,8 +184,33 @@ def _read_config(path):
         profile_labels.add(normalized_label)
     share_ids = set()
     for index, share in enumerate(config["shares"], start=1):
-        if not isinstance(share, dict) or any(field not in share for field in required_share_fields):
+        if not isinstance(share, dict) or any(field not in share for field in ("id", "label")):
             raise ConfigError(f"Share {index} in {path} is incomplete or invalid.")
+        share.setdefault("kind", SOURCE_NETWORK)
+        if share["kind"] == SOURCE_ISO:
+            if not isinstance(share.get("path"), str) or not share["path"]:
+                raise ConfigError(f"ISO image {index} in {path} has an invalid path.")
+            if not isinstance(share["id"], str) or not share["id"]:
+                raise ConfigError(f"ISO image {index} in {path} has an invalid ID.")
+            if not isinstance(share["label"], str) or not share["label"].strip():
+                raise ConfigError(f"ISO image {index} in {path} has an invalid name.")
+            if share["id"] in share_ids:
+                raise ConfigError(f"ISO image {index} in {path} reuses another share ID.")
+            share_ids.add(share["id"])
+            share.setdefault("disconnect_after_minutes", 0)
+            share.setdefault("disconnect_on_lock", False)
+            share.setdefault("disconnect_on_suspend", False)
+            if (
+                not isinstance(share["disconnect_after_minutes"], int)
+                or isinstance(share["disconnect_after_minutes"], bool)
+                or not 0 <= share["disconnect_after_minutes"] <= 7 * 24 * 60
+                or not isinstance(share["disconnect_on_lock"], bool)
+                or not isinstance(share["disconnect_on_suspend"], bool)
+            ):
+                raise ConfigError(f"ISO image {index} in {path} has invalid disconnect settings.")
+            continue
+        if share["kind"] != SOURCE_NETWORK or any(field not in share for field in ("host", "share")):
+            raise ConfigError(f"Share {index} in {path} has an invalid source type.")
         # Credentials added after the original config format are optional;
         # normalizing them here keeps old saved shares fully compatible.
         share.setdefault("protocol", DEFAULT_PROTOCOL)

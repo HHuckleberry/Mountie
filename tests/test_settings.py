@@ -242,6 +242,21 @@ class BackendConfigTests(unittest.TestCase):
         }])
         self.assertEqual(loaded["shares"][0]["backend"], settings.BACKEND_NATIVE)
 
+    def test_iso_image_round_trips_without_network_fields(self):
+        loaded = self._load([{
+            "id": "disc", "kind": settings.SOURCE_ISO,
+            "label": "Reference Data", "path": "/data/reference.iso",
+        }])
+        image = loaded["shares"][0]
+        self.assertEqual(image["path"], "/data/reference.iso")
+        self.assertNotIn("host", image)
+
+    def test_iso_image_requires_a_path(self):
+        with self.assertRaises(settings.ConfigError):
+            self._load([{
+                "id": "disc", "kind": settings.SOURCE_ISO, "label": "Broken",
+            }])
+
 
 if __name__ == "__main__":
     unittest.main()

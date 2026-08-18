@@ -9,13 +9,15 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
-from mountie import native_mount
+from mountie import iso_mount, native_mount
 from mountie.settings import (
     BACKEND_NATIVE,
     DEFAULT_BACKEND,
     DEFAULT_LINK_DIR,
     DEFAULT_PROTOCOL,
     PROTOCOLS,
+    SOURCE_ISO,
+    SOURCE_NETWORK,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,6 +107,13 @@ def validate_share(config):
     """Return a user-facing validation error, or None when a share is valid."""
     if not (config.get("label") or "").strip():
         return "A label is required."
+    if config.get("kind") == SOURCE_ISO:
+        path = Path(config.get("path", "")).expanduser()
+        if not path.is_file():
+            return "Choose an ISO image that exists."
+        if path.suffix.casefold() != ".iso":
+            return "The selected file must have an .iso extension."
+        return None
     host = (config.get("host") or "").strip()
     if not host:
         return "A host or IP address is required."
@@ -148,6 +157,13 @@ def _uri_host(host):
 
 
 def share_uri(config):
+    # ISO (and any future non-network) entries pass validate_share() on
+    # their own terms - a network scheme can't be built from one, so this
+    # has to be rejected here rather than relying on the host/share access
+    # below to fail loudly. Every caller already treats ValueError as
+    # "skip this entry" (see external_network_mounts, discovery.py).
+    if config.get("kind", SOURCE_NETWORK) != SOURCE_NETWORK:
+        raise ValueError("This entry is not a network share.")
     validation_error = validate_share(config)
     if validation_error:
         raise ValueError(validation_error)
@@ -190,6 +206,8 @@ def link_name_collision(config, candidate, exclude_id=None):
 
 def local_path(share):
     """Return the path where a share is mounted, or None."""
+    if share.get("kind") == SOURCE_ISO:
+        return iso_mount.local_path(share)
     if share.get("backend", DEFAULT_BACKEND) == BACKEND_NATIVE:
         return native_mount.local_path(share)
     try:
@@ -292,6 +310,8 @@ class CredMountOperation(Gio.MountOperation):
 
 
 def is_mounted(config):
+    if config.get("kind") == SOURCE_ISO:
+        return iso_mount.is_mounted(config)
     if config.get("backend", DEFAULT_BACKEND) == BACKEND_NATIVE:
         return native_mount.is_mounted(config)
     try:
@@ -334,6 +354,9 @@ def classify_mount_error(error):
 
 def mount_share(config, password, on_done):
     """Mount a share and report (success, status, error_message)."""
+    if config.get("kind") == SOURCE_ISO:
+        iso_mount.mount_image(config, on_done)
+        return
     if config.get("backend", DEFAULT_BACKEND) == BACKEND_NATIVE:
         validation_error = validate_share(config)
         if validation_error:
@@ -374,6 +397,9 @@ def mount_share(config, password, on_done):
 
 
 def unmount_share(config, on_done):
+    if config.get("kind") == SOURCE_ISO:
+        iso_mount.unmount_image(config, on_done)
+        return
     if config.get("backend", DEFAULT_BACKEND) == BACKEND_NATIVE:
         native_mount.unmount_share(config, on_done)
         return

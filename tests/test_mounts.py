@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from gi.repository import Gio
@@ -39,6 +41,15 @@ def share(**overrides):
 
 
 class ShareUriTests(unittest.TestCase):
+    def test_rejects_non_network_share_kinds_with_value_error(self):
+        # The ISO's path must actually exist, or validate_share's own
+        # "file not found" check masks the kind check this test targets.
+        with tempfile.NamedTemporaryFile(suffix=".iso") as image:
+            with self.assertRaises(ValueError):
+                share_uri({
+                    "id": "iso-1", "kind": "iso", "label": "Disc", "path": image.name,
+                })
+
     def test_encodes_path_segments(self):
         self.assertEqual(
             share_uri(share(share="Team Docs/#draft")),
@@ -118,6 +129,24 @@ class ExternalMountTests(unittest.TestCase):
         result = external_network_mounts([], [mounted("Server", "ftp://server/")])
         self.assertNotIn("config", result[0])
 
+    def test_non_network_configured_shares_are_skipped_not_crashed_on(self):
+        # Regression: an ISO (kind="iso") entry has no host/share fields.
+        # share_uri() used to KeyError on it instead of raising ValueError,
+        # which crashed this function - and therefore app startup - the
+        # moment any ISO image was configured alongside a network share.
+        # The image file must actually exist, or validate_share's own
+        # "file not found" check would raise ValueError for an unrelated
+        # reason and mask the bug this test targets.
+        with tempfile.NamedTemporaryFile(suffix=".iso") as image:
+            iso_entry = {
+                "id": "iso-1", "kind": "iso", "label": "Install disc",
+                "path": image.name,
+            }
+            mounts = [mounted("Other", "sftp://other.example/home")]
+            result = external_network_mounts([share(), iso_entry], mounts)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "Other")
+
     def test_deduplicates_equivalent_mounts(self):
         mounts = [
             mounted("One", "smb://server/data/"),
@@ -168,6 +197,19 @@ class CredentialPromptTests(unittest.TestCase):
 
 
 class BackendDispatchTests(unittest.TestCase):
+    def test_iso_dispatches_all_mount_operations(self):
+        cfg = {"id": "disc", "kind": "iso", "label": "Disc", "path": "/tmp/disc.iso"}
+        on_done = mock.Mock()
+        with mock.patch("mountie.mounts.iso_mount") as image:
+            image.is_mounted.return_value = True
+            image.local_path.return_value = "/run/media/user/Disc"
+            self.assertTrue(is_mounted(cfg))
+            self.assertEqual(local_path(cfg), "/run/media/user/Disc")
+            mount_share(cfg, "", on_done)
+            unmount_share(cfg, on_done)
+        image.mount_image.assert_called_once_with(cfg, on_done)
+        image.unmount_image.assert_called_once_with(cfg, on_done)
+
     def test_gvfs_share_never_touches_native_mount(self):
         with mock.patch("mountie.mounts.native_mount") as native:
             with mock.patch("mountie.mounts.Gio") as gio:

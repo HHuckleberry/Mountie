@@ -15,6 +15,7 @@ from mountie.settings import (
     DISCONNECT_OPTIONS,
     PROTOCOLS,
     SHARE_PRESETS,
+    SOURCE_ISO,
 )
 from mountie.app.components.common import StatusBadge, ToggleSwitch
 from mountie.app.components.discovery import DiscoveryPanel
@@ -335,7 +336,11 @@ class ShareCard(QtWidgets.QFrame):
         self.label_lbl.setTextFormat(QtCore.Qt.PlainText)
         self.label_lbl.setObjectName("shareLabel")
         protocol = cfg.get("protocol", DEFAULT_PROTOCOL)
-        self.target_lbl = QtWidgets.QLabel(f"{protocol}://{cfg['host']}/{cfg['share']}")
+        target = (
+            f"ISO image · {cfg['path']}" if cfg.get("kind") == SOURCE_ISO
+            else f"{protocol}://{cfg['host']}/{cfg['share']}"
+        )
+        self.target_lbl = QtWidgets.QLabel(target)
         self.target_lbl.setTextFormat(QtCore.Qt.PlainText)
         self.target_lbl.setObjectName("shareTarget")
         text_col.addWidget(self.label_lbl)

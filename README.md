@@ -1,6 +1,6 @@
 # Mountie
 
-Mount and manage network shares from a small desktop app. Mountie supports
+Mount and manage network shares and read-only ISO images from a small desktop app. Mountie supports
 SMB/CIFS, AFP, NFS, SFTP, and WebDAV through GVfs without requiring root. An
 optional native SMB/CIFS backend is available through a narrowly scoped,
 administrator-installed helper.
@@ -10,6 +10,7 @@ administrator-installed helper.
 ## Features
 
 - Add, edit, discover, import, and remove network shares
+- Mount ISO images as read-only data sources, like removable media
 - Connect or disconnect one share—or all shares—with a click
 - Find mounted shares at `~/Shares/<label>` by default
 - Ask for passwords each time, keep them until logout, or save them in your
@@ -25,6 +26,7 @@ administrator-installed helper.
 - Python 3.9+
 - PyQt5 and PyGObject (`Gio` and `Secret` typelibs)
 - GVfs and the backends for the protocols you use
+- UDisks2 (`udisksctl`) for mounting ISO images
 - A Secret Service provider such as GNOME Keyring or KWallet
 
 On Debian/Ubuntu-based systems, network backends are provided by the
@@ -47,7 +49,7 @@ Then launch it with `mountie`.
 
 ## Use
 
-1. Open Mountie and select **Add Share**.
+1. Open Mountie and select **Add → Network Share** or **Add → ISO Image**.
 2. Enter the server details, choose a template, or use **Discover** to browse
    shares advertised on your network.
 3. Choose how credentials should be handled and save the share.

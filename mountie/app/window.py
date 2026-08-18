@@ -41,6 +41,7 @@ from mountie.settings import (
     load_config_file,
     save_config,
     share_with_credentials,
+    SOURCE_ISO,
 )
 from mountie.app.settings import CredentialProfilesDialog, SettingsDialog
 from mountie.app.components import (
@@ -97,7 +98,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.setSpacing(12)
 
         header = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("Network Shares")
+        title = QtWidgets.QLabel("Mounts")
         title.setObjectName("headerTitle")
         header.addWidget(title)
         version = QtWidgets.QLabel(f"v{__version__}")
@@ -133,13 +134,16 @@ class MainWindow(QtWidgets.QMainWindow):
         header.addWidget(settings_btn)
 
         # Sits on the highlight color, so it tints against that, not the window.
-        self.add_btn = add_btn = QtWidgets.QPushButton(" Add Share")
+        self.add_btn = add_btn = QtWidgets.QPushButton(" Add")
         add_btn.setIcon(tinted_icon(
             self.palette().color(QtGui.QPalette.HighlightedText),
             "list-add-symbolic", "list-add",
         ))
         add_btn.setObjectName("primaryButton")
-        add_btn.clicked.connect(self.add_share)
+        add_menu = QtWidgets.QMenu(add_btn)
+        add_menu.addAction("Network Share…", self.add_share)
+        add_menu.addAction("ISO Image…", self.add_iso)
+        add_btn.setMenu(add_menu)
         header.addWidget(add_btn)
         layout.addLayout(header)
 
@@ -160,7 +164,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.update_banner)
 
         self.search = QtWidgets.QLineEdit()
-        self.search.setPlaceholderText("Search shares")
+        self.search.setPlaceholderText("Search mounts")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._apply_filter)
         layout.addWidget(self.search)
@@ -712,6 +716,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if checked:
             card.badge.set_status("connecting...")
+            if cfg.get("kind") == SOURCE_ISO:
+                mount_share(cfg, "", lambda ok, status, err, sid=share_id:
+                            self.bridge.done.emit(sid, ok, status or "", err or ""))
+                return
             policy = effective_credential_policy(self.cfg, cfg)
             credential_id = credential_key(self.cfg, cfg)
             resolved_cfg = share_with_credentials(self.cfg, cfg)
@@ -804,8 +812,38 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---- add/edit/delete ----
 
+    def add_iso(self):
+        path, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Add ISO Image", "", "ISO images (*.iso)"
+        )
+        if not path:
+            return
+        default_label = QtCore.QFileInfo(path).completeBaseName()
+        label, accepted = QtWidgets.QInputDialog.getText(
+            self, "ISO display name", "Display name:", text=default_label
+        )
+        if not accepted:
+            return
+        values = {
+            "id": uuid.uuid4().hex, "kind": SOURCE_ISO,
+            "label": label.strip(), "path": path,
+            "disconnect_after_minutes": 0,
+            "disconnect_on_lock": False, "disconnect_on_suspend": False,
+        }
+        if not self._validate_values(values):
+            return
+        self.cfg["shares"].append(values)
+        if not self._save_config():
+            self.cfg["shares"].remove(values)
+            return
+        self.reload_list(query_status=True)
+
     def add_share(self):
-        last_host = self.cfg["shares"][-1]["host"] if self.cfg["shares"] else ""
+        last_host = next(
+            (item.get("host", "") for item in reversed(self.cfg["shares"])
+             if item.get("kind") != SOURCE_ISO),
+            "",
+        )
         dlg = ShareDialog(
             self,
             default_host=last_host,
@@ -842,6 +880,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def edit_share(self, share_id):
         cfg = self._cfg_for_id(share_id)
         if cfg is None:
+            return
+        if cfg.get("kind") == SOURCE_ISO:
+            self.edit_iso(share_id)
             return
         dlg = ShareDialog(
             self,
@@ -930,15 +971,42 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.critical(self, "Keyring error", str(error))
         self.reload_list(query_status=True)
 
+    def edit_iso(self, share_id):
+        cfg = self._cfg_for_id(share_id)
+        if cfg is None or is_mounted(cfg):
+            QtWidgets.QMessageBox.information(
+                self, "Disconnect ISO first", "Disconnect the ISO image before editing it."
+            )
+            return
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Choose ISO Image", cfg["path"], "ISO images (*.iso)"
+        )
+        if not path:
+            return
+        label, accepted = QtWidgets.QInputDialog.getText(
+            self, "ISO display name", "Display name:", text=cfg["label"]
+        )
+        if not accepted:
+            return
+        values = {**cfg, "path": path, "label": label.strip()}
+        if not self._validate_values(values, exclude_id=share_id):
+            return
+        old = cfg.copy()
+        cfg.update(values)
+        if not self._save_config():
+            cfg.clear()
+            cfg.update(old)
+        self.reload_list(query_status=True)
+
     def delete_share(self, share_id):
         cfg = self._cfg_for_id(share_id)
         if cfg is None:
             return
         profile_id = cfg.get("credential_profile_id", "")
-        detail = (
+        detail = (" This also ejects its loop device." if cfg.get("kind") == SOURCE_ISO else (
             " Its shared credential profile will remain available."
             if profile_id else " This removes its saved password too."
-        )
+        ))
         reply = QtWidgets.QMessageBox.question(
             self, "Delete share", f"Delete '{cfg['label']}'?{detail}",
         )
@@ -974,7 +1042,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if card:
                 card.set_operations_enabled(True)
             return
-        if not cfg.get("credential_profile_id"):
+        if cfg.get("kind") != SOURCE_ISO and not cfg.get("credential_profile_id"):
             try:
                 clear_password(share_id)
             except CredentialError as keyring_error:
