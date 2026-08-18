@@ -6,8 +6,12 @@ from gi.repository import Gio
 from mountie.mounts import (
     CredMountOperation,
     external_network_mounts,
+    is_mounted,
     link_name_collision,
+    local_path,
+    mount_share,
     share_uri,
+    unmount_share,
     validate_share,
 )
 
@@ -61,6 +65,14 @@ class ShareUriTests(unittest.TestCase):
 
     def test_rejects_invalid_bracketed_ipv6(self):
         self.assertIsNotNone(validate_share(share(host="[2001:db8::1")))
+
+    def test_rejects_native_backend_with_non_smb_protocol(self):
+        self.assertIsNotNone(
+            validate_share(share(protocol="sftp", backend="native"))
+        )
+
+    def test_accepts_native_backend_with_smb_protocol(self):
+        self.assertIsNone(validate_share(share(protocol="smb", backend="native")))
 
     def test_rejects_invalid_port(self):
         self.assertIsNotNone(validate_share(share(host="server.example:99999")))
@@ -153,6 +165,45 @@ class CredentialPromptTests(unittest.TestCase):
         mount_operation._on_ask_password(operation, "", "", "", flags)
         operation.reply.assert_called_once_with(Gio.MountOperationResult.ABORTED)
         self.assertTrue(mount_operation.credentials_rejected)
+
+
+class BackendDispatchTests(unittest.TestCase):
+    def test_gvfs_share_never_touches_native_mount(self):
+        with mock.patch("mountie.mounts.native_mount") as native:
+            with mock.patch("mountie.mounts.Gio") as gio:
+                is_mounted(share())
+            native.is_mounted.assert_not_called()
+            gio.File.new_for_uri.assert_called_once()
+
+    def test_native_share_dispatches_is_mounted(self):
+        with mock.patch("mountie.mounts.native_mount") as native:
+            native.is_mounted.return_value = True
+            cfg = share(backend="native")
+            self.assertTrue(is_mounted(cfg))
+            native.is_mounted.assert_called_once_with(cfg)
+
+    def test_native_share_dispatches_local_path(self):
+        with mock.patch("mountie.mounts.native_mount") as native:
+            native.local_path.return_value = "/run/user/1000/mountie/one"
+            cfg = share(backend="native")
+            self.assertEqual(local_path(cfg), "/run/user/1000/mountie/one")
+            native.local_path.assert_called_once_with(cfg)
+
+    def test_native_share_dispatches_mount(self):
+        with mock.patch("mountie.mounts.native_mount") as native:
+            cfg = share(backend="native")
+            on_done = mock.Mock()
+            mount_share(cfg, "secret", on_done)
+            native.mount_share.assert_called_once_with(cfg, "secret", on_done)
+            on_done.assert_not_called()
+
+    def test_native_share_dispatches_unmount(self):
+        with mock.patch("mountie.mounts.native_mount") as native:
+            cfg = share(backend="native")
+            on_done = mock.Mock()
+            unmount_share(cfg, on_done)
+            native.unmount_share.assert_called_once_with(cfg, on_done)
+            on_done.assert_not_called()
 
 
 if __name__ == "__main__":

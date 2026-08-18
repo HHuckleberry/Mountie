@@ -1,8 +1,10 @@
 """Application settings, diagnostics, and credential-profile dialogs."""
 
+import shlex
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from mountie import __version__
+from mountie import __version__, native_mount
 from mountie.logging_setup import LOG_PATH, read_log
 from mountie.sbom import format_sbom, load_sbom
 from mountie.settings import (
@@ -281,8 +283,8 @@ class SettingsDialog(QtWidgets.QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle("Mountie Settings")
-        self.resize(720, 470)
-        self.setMinimumSize(660, 420)
+        self.resize(720, 620)
+        self.setMinimumSize(660, 560)
 
         outer = QtWidgets.QVBoxLayout(self)
         body = QtWidgets.QHBoxLayout()
@@ -365,8 +367,87 @@ class SettingsDialog(QtWidgets.QDialog):
         updates_layout.addWidget(updates_hint)
         layout.addWidget(updates_card)
 
+        layout.addWidget(self._native_mount_card())
+
         layout.addStretch()
-        return page
+
+        # General has grown past a fixed dialog height (Appearance + Updates
+        # + Native mount, the last of which can grow further still once its
+        # setup command is revealed) - scroll rather than clip or keep
+        # guessing at pixel sizes.
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setWidget(page)
+        return scroll
+
+    def _native_mount_card(self):
+        card = QtWidgets.QGroupBox("Native mount")
+        card_layout = QtWidgets.QVBoxLayout(card)
+
+        installed = native_mount.is_helper_installed()
+        self.native_helper_installed = installed
+        self.native_status_lbl = QtWidgets.QLabel(
+            "Installed — native SMB/CIFS mounts are ready to use."
+            if installed else
+            "Not set up — native SMB/CIFS mounts need a one-time host setup."
+        )
+        self.native_status_lbl.setWordWrap(True)
+        card_layout.addWidget(self.native_status_lbl)
+
+        self.native_setup_btn = QtWidgets.QPushButton(
+            "Show removal command…" if installed else "Show setup command…"
+        )
+        self.native_setup_btn.clicked.connect(self._show_native_setup_command)
+        card_layout.addWidget(self.native_setup_btn)
+
+        command_row = QtWidgets.QHBoxLayout()
+        self.native_command_edit = QtWidgets.QLineEdit()
+        self.native_command_edit.setReadOnly(True)
+        self.native_command_edit.setVisible(False)
+        self.native_command_edit.setMinimumWidth(0)
+        self.native_command_edit.setSizePolicy(
+            QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Fixed
+        )
+        command_row.addWidget(self.native_command_edit, 1)
+        self.native_copy_btn = QtWidgets.QPushButton("Copy")
+        self.native_copy_btn.setVisible(False)
+        self.native_copy_btn.clicked.connect(self._copy_native_setup_command)
+        command_row.addWidget(self.native_copy_btn)
+        card_layout.addLayout(command_row)
+
+        native_hint = QtWidgets.QLabel(
+            "Runs a small root-owned helper via a system authentication prompt "
+            "so a share can be mounted with the kernel's own CIFS driver "
+            "instead of GVfs, for better throughput on large transfers. "
+            "Opt-in per share (Add Share > Mount using); see "
+            "docs/native-mount-backend.md for exactly what this grants."
+        )
+        native_hint.setObjectName("settingsHint")
+        native_hint.setWordWrap(True)
+        card_layout.addWidget(native_hint)
+        return card
+
+    def _show_native_setup_command(self):
+        try:
+            _write_path, host_path = native_mount.export_installer_for_host()
+        except OSError as error:
+            QtWidgets.QMessageBox.critical(
+                self, "Could not prepare setup command",
+                f"Could not write the setup script: {error}",
+            )
+            return
+        command = f"sudo bash -- {shlex.quote(str(host_path))}"
+        if self.native_helper_installed:
+            command += " --uninstall"
+        self.native_command_edit.setText(command)
+        self.native_command_edit.setVisible(True)
+        self.native_command_edit.selectAll()
+        self.native_copy_btn.setVisible(True)
+        self.native_setup_btn.setVisible(False)
+
+    def _copy_native_setup_command(self):
+        QtWidgets.QApplication.clipboard().setText(self.native_command_edit.text())
 
     def _credentials_page(self, credential_policy, profile_count, manage_profiles):
         page, layout = self._page(

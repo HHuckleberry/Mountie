@@ -1,51 +1,34 @@
 # Mountie
 
-A small GUI for mounting and managing network shares (SMB/CIFS, AFP, NFS,
-SFTP, WebDAV) via GVfs.
+Mount and manage network shares from a small desktop app. Mountie supports
+SMB/CIFS, AFP, NFS, SFTP, and WebDAV through GVfs without requiring root. An
+optional native SMB/CIFS backend is available through a narrowly scoped,
+administrator-installed helper.
 
-It runs on any desktop with GVfs and a secret service, and follows the
-desktop's own light/dark preference and accent color through the XDG
-settings portal — so it looks at home on [COSMIC][cosmic], GNOME or KDE
-alike.
+![Mountie's main window](data/screenshots/main-window.png)
 
-- **Add / edit / remove shares** for any host and protocol GVfs supports.
-- **Guided share creation**: Add Share opens with its own **Discover** tab for
-  browsing shares advertised on the network, and a **Start from** picker for
-  ready-made templates (Media Library, Backup Target, NAS Folder) that
-  pre-fill a sensible protocol, label, and disconnect policy — or ignore both
-  and fill in a blank form as before.
-- **One-click toggle** to mount/unmount each share (no `sudo`/`pkexec` needed
-  — mounts land in the per-user GVfs mount namespace via `gio`).
-- **Security-first credential policies**: new installations ask every time by
-  default. You can instead remember passwords until logout or save them in the
-  desktop's system keyring. Passwords are never written to Mountie's config or
-  logs.
-- **Reusable credential profiles** for people who use one account across
-  several shares, while still allowing every share to use a different account
-  or no account at all.
-- **Connection controls for larger setups**: search, Connect All, Disconnect
-  All, live GVfs status updates, and import of eligible mounts created outside
-  Mountie.
-- **Automatic disconnect policies** per share: after a fixed connected time,
-  when the screen locks, or when the system begins suspending.
-- **System / Light / Dark themes**, selectable from the appearance button
-  and remembered between runs. The default, System, follows the desktop's
-  light/dark preference live via the XDG settings portal — the same source
-  COSMIC itself drives — and picks up your COSMIC accent color. Because it
-  reads the portal rather than the Qt palette, it stays correct without
-  `qt5ct`/`qt6ct` and inside a Flatpak sandbox.
+## Features
 
-[cosmic]: https://github.com/pop-os/cosmic-epoch
+- Add, edit, discover, import, and remove network shares
+- Connect or disconnect one share—or all shares—with a click
+- Find mounted shares at `~/Shares/<label>` by default
+- Ask for passwords each time, keep them until logout, or save them in your
+  system keyring
+- Reuse credential profiles across shares
+- Disconnect after a set time, on screen lock, or before suspend
+- Follow your desktop theme and accent color, with light and dark overrides
+- Optionally mount SMB/CIFS shares with the native kernel driver instead of
+  GVfs, for better throughput on large transfers (opt-in, one-time setup)
 
 ## Requirements
 
 - Python 3.9+
-- PyQt5
-- PyGObject, with the `Gio` and `Secret` (libsecret) typelibs available
-- A running secret service (GNOME Keyring, KWallet via a Secret Service
-  bridge, etc.)
-- GVfs, with backends installed for whichever protocols you use (e.g.
-  `gvfs-backends` for SMB/AFP/NFS on Debian/Ubuntu-based distros)
+- PyQt5 and PyGObject (`Gio` and `Secret` typelibs)
+- GVfs and the backends for the protocols you use
+- A Secret Service provider such as GNOME Keyring or KWallet
+
+On Debian/Ubuntu-based systems, network backends are provided by the
+`gvfs-backends` package.
 
 ## Install
 
@@ -53,237 +36,91 @@ alike.
 ./install.sh
 ```
 
-This installs into a virtualenv at `~/.local/share/mountie/venv` and
-registers a launcher entry under `~/.local/share/applications/` pointed at
-it, so **Mountie** shows up in your app launcher right away.
-
-A venv is used because most distributions now mark the system Python as
-externally managed (PEP 668), which makes `pip install --user` fail. It is
-created with `--system-site-packages` so it reuses your distribution's PyQt5
-and PyGObject rather than building PyGObject from source.
-
-To install without a launcher entry, or to package it yourself:
+This installs Mountie in `~/.local/share/mountie` and adds it to your app
+launcher. To install it as a Python package instead:
 
 ```sh
 pip install .
 ```
 
-This installs a `mountie` console script. To add a launcher entry
-manually:
+Then launch it with `mountie`.
+
+## Use
+
+1. Open Mountie and select **Add Share**.
+2. Enter the server details, choose a template, or use **Discover** to browse
+   shares advertised on your network.
+3. Choose how credentials should be handled and save the share.
+4. Use its toggle to connect or disconnect.
+
+GVfs mounts are linked into `~/Shares` for convenient access. Native mounts
+appear there directly. The link directory and link creation can be changed in
+`~/.config/mountie/config.json`.
+
+New installations default to **Ask every time**, so passwords are not stored.
+Other policies keep passwords in the desktop keyring—never in Mountie's
+configuration or logs. Configuration exports do not include passwords.
+
+The actions menu contains Connect All, Disconnect All, credential profiles,
+and configuration import/export. Settings contains appearance, credential,
+and diagnostic options.
+
+## Native mount (optional)
+
+Add Share's Connection tab has a **Mount using** option for SMB/CIFS shares:
+GVfs (the default) or a native kernel `mount.cifs`. Native mount can be
+noticeably faster for large transfers, but it needs root, so it's opt-in and
+requires a one-time setup step.
+
+**Settings → General → Native mount** shows whether it's set up on this
+machine, and if not, a **Show setup command…** button that gives you a
+ready-to-copy `sudo bash -- <path>` command — this works the same way whether
+Mountie is installed natively or as a Flatpak, no need to go find anything
+in the repo yourself. Equivalently, from a git checkout:
 
 ```sh
-cp data/io.github.HHuckleberry.Mountie.desktop ~/.local/share/applications/
+sudo scripts/install-native-mount-helper.sh
 ```
 
-(Adjust `Exec=` in that file if `mountie` isn't on your `PATH`, e.g.
-when installed into a venv.)
+Either way, this installs a small privileged helper and a polkit policy that
+authorizes it; connecting a native-mount share then shows a normal system
+authentication prompt. See
+[docs/native-mount-backend.md](docs/native-mount-backend.md) for exactly what
+it grants and why. Existing GVfs shares are unaffected either way.
 
-## Where your shares end up
-
-GVfs mounts land at `/run/user/<uid>/gvfs/smb-share:server=…,share=…`, which
-is precise and unusable. So each mounted share also gets a symlink in one
-predictable directory — `~/Shares/<label>` by default:
-
-```
-~/Shares/home -> /run/user/1000/gvfs/smb-share:server=192.168.2.8,share=home
-```
-
-Links appear on mount and are removed on unmount, and stale ones are cleaned
-up at startup. Anything that isn't a symlink is left strictly alone, so
-pointing `link_dir` at a directory holding real files can't destroy them.
-
-To change the location, set `link_dir` in
-`~/.config/mountie/config.json`. Using `/mnt` needs a one-time setup,
-because `/mnt` is root-owned and this app never asks for root:
+To remove the native helper and its authorization policy, return to
+**Settings → General → Native mount** and select **Show removal command…**.
+From a git checkout, the equivalent command is:
 
 ```sh
-sudo mkdir -p /mnt/shares && sudo chown "$USER" /mnt/shares
+sudo scripts/install-native-mount-helper.sh --uninstall
 ```
 
-Then set `"link_dir": "/mnt/shares"`. Set `"links_enabled": false` to turn
-the feature off.
+Unmount native shares before removing the helper. GVfs support continues to
+work after removal.
 
-Mountie follows the XDG directory specification. Native installations store
-settings at `~/.config/mountie/config.json`; Flatpak keeps them in its
-persistent application-data directory. On its first Flatpak launch, Mountie
-imports an existing native configuration automatically. It also maintains a
-`config.json.backup` file and recovers from it if the primary file is damaged.
-The actions menu can also export or import a validated JSON configuration.
-Exports include share locations, usernames, domains, and profile names, but
-never passwords. Exported identity information can still be sensitive, so the
-file is created with user-only permissions.
+## Notes
 
-## Credential security and convenience
+- Network discovery depends on the GVfs backends installed on your system.
+- Auto-disconnect and lock/suspend handling require Mountie to remain running.
+- Duration-based auto-disconnect measures total connection time, not idle time.
+- Settings are stored at `~/.config/mountie/config.json` for native installs.
+  Flatpak stores them in its application-data directory.
+- Native-mount shares don't participate in GVfs's live mount-change
+  notifications, so their status only refreshes on startup, on manual
+  refresh, or right after Mountie mounts/unmounts them itself.
 
-The default policy for a fresh installation is **Ask every time**. Existing
-installations retain their previous storage behavior during migration so an
-update does not silently break configured shares. Change the global default on
-the Credentials page in Settings; enabling permanent storage requires an
-explicit warning confirmation. A share or reusable credential profile can
-override the default.
+## Development
 
-| Policy | Convenience | Security tradeoff |
-|---|---|---|
-| Ask every time | Password is entered for every connection | Mountie stores no password |
-| Remember until logout | Reconnect without prompting during this login | Password lives in the keyring's temporary session collection |
-| Save in system keyring | Reconnect across logins | Protection depends on the desktop keyring being configured and locked correctly |
-
-Anonymous and passwordless shares work with every policy. Domains/workgroups
-are optional and are stored separately from usernames, so both domain accounts
-and standalone server accounts work. The credential profile manager in the
-actions menu can rename profiles, replace their passwords, and show which
-shares use them. A profile cannot be removed while a share still references it.
-
-## Usage
-
-Run `mountie`, then **Add Share**. Its Connection tab has a **Start from**
-picker for templates, and there's a whole **Discover** tab next to it for
-browsing the network — both live on the Add Share screen itself, nothing
-pops up separately:
-
-- The **Discover** tab asks the desktop's GVfs network service for devices
-  and shares advertised on the local network. Discovery is passive: Mountie
-  does not scan address ranges, test ports, or connect automatically. Device
-  icons supplied by the desktop are shown when available. Choose **Sign In &
-  Browse** on a server to enter one-use credentials, explore its shares, and
-  select the exact share to save — GVfs is told not to retain the browsing
-  password. **Add…** remains available when you already know the share name
-  and only want the discovered server address prefilled. Either way, the
-  picked values fill in the Connection tab and Mountie switches you back to
-  it, where its normal password storage policy applies. Availability depends
-  on the desktop's installed GVfs discovery backends, so Custom/template
-  entry remains available when network browsing is unsupported.
-- The **Start from** picker's **Media Library**, **Backup Target**, and
-  **NAS Folder** entries pre-fill a protocol, label, and disconnect policy
-  suited to that use case (for example, Backup Target disconnects
-  automatically before your laptop suspends). You still fill in the host and
-  share/path yourself, and every field stays editable afterward.
-
-Both only appear on a genuinely new share — editing an existing one, or
-importing an External connection (below), skips straight to its real values.
-
-Flip the toggle to mount or unmount. Status badges show
-connected/disconnected/error state; use the refresh button to re-check all
-shares against what's actually mounted. Refresh also shows network
-connections created by another application as read-only **External** rows.
-Use **Import** to adopt an eligible connection as a normal Mountie share.
-Mountie can recover the target and sometimes its username, but another
-application's password is never exposed, so you may need to enter it again.
-
-Use the connection-actions menu for Connect All, Disconnect All, credential
-profiles, and configuration import/export. Bulk operations run one at a time so
-credential prompts and errors remain attributable to the correct share.
-
-Auto-disconnect is a **fixed connected-duration timer**, not an idle-activity
-timer. Other applications read GVfs mounts directly, so Mountie cannot reliably
-observe all file activity. Timers and lock/suspend handling require Mountie to
-remain running. Lock and suspend notifications are best effort because desktop
-environments expose them differently; the ordinary duration timer remains the
-most predictable option.
-
-For SMB shares joined to Active Directory or a Windows workgroup, enter the
-domain/workgroup separately from the username. Leave the domain/workgroup
-blank for standalone servers, local server accounts, and protocols that do
-not use one.
-
-The Settings button in the header opens separate pages for appearance,
-credentials, diagnostics, and application information. It shows the installed
-version, repository and issue links, configuration locations, and a viewer for
-the rotating application log. Add/Edit Share is similarly divided into focused
-Connection, Credentials, and Disconnect tabs.
-
-## Testing
-
-Run the complete test suite with:
+Run the test suite with:
 
 ```sh
 python3 -m unittest discover -s tests -v
 ```
 
-The isolated abuse-case suite uses no real network shares or keyring entries:
-
-```sh
-python3 -m unittest tests.test_abuse_cases -v
-```
-
-To check one already-configured share against its real server and saved
-keyring entry without exposing credentials or directory names:
-
-```sh
-python3 scripts/test_configured_share.py "Share label"
-```
-
-The check preserves the share's original mount state.
-
-## Flatpak size
-
-Flatpak reports an application payload separately from its shared KDE runtime.
-The PyQt BaseApp also includes optional Qt WebEngine components unless its
-provided cleanup is enabled. Mountie does not use WebEngine, so the manifest
-removes it and the Python build toolchain after building. In the current local
-test build this reduced Mountie's installed payload from about 256 MB to 35 MB
-and its single-file bundle from 65 MB to about 5.4 MB. The KDE runtime remains a
-shared dependency and is downloaded once for all compatible applications.
-
-## TODO
-
-Completed reliability and security work:
-
-- [x] Allow passwordless and anonymous shares to mount without requiring a
-  saved keyring password.
-- [x] After a failed mount or unmount, query the real mount state and keep the
-  toggle, status badge, and symlink synchronized with it.
-- [x] When deleting a mounted share, wait for unmounting to finish and handle
-  failures before removing its configuration, keyring entry, and symlink.
-- [x] Safely handle edits to mounted shares, including unmounting the old
-  target and removing or renaming its previous symlink.
-- [x] Prevent normalized share labels from producing duplicate symlink names,
-  or include a stable unique suffix in each generated name.
-- [x] Catch and report configuration, filesystem, and secret-service errors
-  instead of terminating the application.
-- [x] Validate host and share/path input and construct properly encoded URIs,
-  including correct handling for IPv6 addresses and reserved characters.
-- [x] Default new installs to no credential storage, with explicit session and
-  permanent keyring policies and a warning before permanent storage.
-- [x] Support reusable credential profiles without putting passwords in the
-  configuration.
-- [x] Monitor GVfs mount changes, show external connections, and provide
-  sequential Connect All / Disconnect All controls.
-- [x] Add fixed-duration, screen-lock, and suspend-triggered disconnect options.
-- [x] Export and validate configurations without exporting passwords.
-- [x] Remove unused Qt WebEngine and build-time files from the Flatpak payload.
-
-Possible follow-up work:
-
-- [ ] Add cloud-share integrations through a provider-neutral backend layer;
-  begin with the researched [cloud integration design](docs/cloud-integrations.md)
-  and an opt-in rclone prototype rather than adding cloud accounts as URI
-  protocols.
-- [ ] Evaluate desktop-specific idle/activity APIs before offering an
-  activity-based disconnect mode; do not label a fixed timer as idle detection.
-- [ ] Evaluate an opt-in background/autostart mode through the desktop portal so
-  timers can continue without keeping the main window open.
-- [ ] Evaluate trusted-network auto-connect only where the desktop can provide a
-  reliable network identity without broadening Flatpak permissions excessively.
-
-## Before publishing a fork
-
-`APP_ID` in `mountie/settings.py` is the single source of truth for the
-libsecret schema, the desktop entry, and the icon name. If you fork this,
-change it to a reverse-DNS ID you control — for a GitHub-hosted fork that's
-`io.github.<account>.<repo>`, which must resolve to a reachable repository —
-so your build doesn't collide with anyone else's over stored secrets.
-
-Renaming strands any credentials already saved under the old ID. To carry
-them over:
-
-```sh
-python3 scripts/migrate_keyring.py io.github.old.AppId
-```
-
-That copies rather than moves, so the old entries stay put and re-running is
-harmless.
+See [the cloud integration design](docs/cloud-integrations.md) for future
+provider work.
 
 ## License
 
-GPL-3.0-only. See [LICENSE](LICENSE).
+See [LICENSE](LICENSE).

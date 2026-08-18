@@ -207,5 +207,41 @@ class SharePresetsTests(unittest.TestCase):
         self.assertEqual(len(keys), len(set(keys)))
 
 
+class BackendConfigTests(unittest.TestCase):
+    def _load(self, shares):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps({"shares": shares}))
+            with mock.patch.object(settings, "CONFIG_PATH", path):
+                return settings.load_config()
+
+    def test_legacy_share_without_backend_defaults_to_gvfs(self):
+        loaded = self._load([{
+            "id": "legacy", "label": "Legacy", "host": "server", "share": "data",
+        }])
+        self.assertEqual(loaded["shares"][0]["backend"], settings.BACKEND_GVFS)
+
+    def test_rejects_unknown_backend(self):
+        with self.assertRaises(settings.ConfigError):
+            self._load([{
+                "id": "share", "label": "Share", "host": "server", "share": "data",
+                "backend": "sshfs",
+            }])
+
+    def test_rejects_native_backend_with_non_smb_protocol(self):
+        with self.assertRaises(settings.ConfigError):
+            self._load([{
+                "id": "share", "label": "Share", "host": "server", "share": "data",
+                "protocol": "nfs", "backend": settings.BACKEND_NATIVE,
+            }])
+
+    def test_native_backend_with_smb_round_trips(self):
+        loaded = self._load([{
+            "id": "share", "label": "Share", "host": "server", "share": "data",
+            "protocol": "smb", "backend": settings.BACKEND_NATIVE,
+        }])
+        self.assertEqual(loaded["shares"][0]["backend"], settings.BACKEND_NATIVE)
+
+
 if __name__ == "__main__":
     unittest.main()

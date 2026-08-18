@@ -27,6 +27,15 @@ PROTOCOLS = [
     ("davs", "WebDAV (secure)"),
 ]
 DEFAULT_PROTOCOL = "smb"
+
+BACKEND_GVFS = "gvfs"
+BACKEND_NATIVE = "native"
+BACKENDS = (
+    (BACKEND_GVFS, "GVfs (default, no setup required)"),
+    (BACKEND_NATIVE, "Native kernel mount (SMB/CIFS only, requires one-time setup)"),
+)
+DEFAULT_BACKEND = BACKEND_GVFS
+
 DEFAULT_LINK_DIR = "~/Shares"
 DISCONNECT_OPTIONS = (
     (0, "Never"),
@@ -179,6 +188,7 @@ def _read_config(path):
         # Credentials added after the original config format are optional;
         # normalizing them here keeps old saved shares fully compatible.
         share.setdefault("protocol", DEFAULT_PROTOCOL)
+        share.setdefault("backend", DEFAULT_BACKEND)
         share.setdefault("domain", "")
         share.setdefault("username", "")
         share.setdefault("credential_policy", CREDENTIAL_USE_GLOBAL)
@@ -187,7 +197,7 @@ def _read_config(path):
         share.setdefault("disconnect_on_lock", False)
         share.setdefault("disconnect_on_suspend", False)
         string_fields = (
-            "id", "protocol", "label", "host", "share", "domain", "username",
+            "id", "protocol", "backend", "label", "host", "share", "domain", "username",
             "credential_policy",
             "credential_profile_id",
         )
@@ -200,6 +210,12 @@ def _read_config(path):
         share_ids.add(share["id"])
         if share["protocol"] not in dict(PROTOCOLS):
             raise ConfigError(f"Share {index} in {path} uses an unsupported protocol.")
+        if share["backend"] not in dict(BACKENDS):
+            raise ConfigError(f"Share {index} in {path} uses an unsupported backend.")
+        if share["backend"] == BACKEND_NATIVE and share["protocol"] != "smb":
+            raise ConfigError(
+                f"Share {index} in {path} uses the native backend, which only supports SMB/CIFS."
+            )
         if share["credential_policy"] not in {
             CREDENTIAL_USE_GLOBAL, *(key for key, _label in CREDENTIAL_POLICIES)
         }:

@@ -13,7 +13,7 @@ description = "A GUI for mounting and managing SMB/CIFS, AFP, NFS, SFTP, and Web
 readme = "README.md"
 license = { text = "GPL-3.0-only" }
 requires-python = ">=3.9"
-authors = [{ name = "tmccracken" }]
+authors = [{ name = "HHH" }]
 classifiers = [
     "Environment :: X11 Applications :: Qt",
     "Intended Audience :: End Users/Desktop",

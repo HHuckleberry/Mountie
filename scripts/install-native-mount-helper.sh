@@ -1,0 +1,362 @@
+#!/usr/bin/env bash
+# GENERATED FILE - do not edit by hand. Edit
+# data/native-mount-helper/mountie-mount-helper and
+# data/native-mount-helper/io.github.HHuckleberry.Mountie.policy instead,
+# then run scripts/generate_native_mount_installer.py.
+#
+# Installs the native-mount privileged helper and its polkit policy onto the
+# HOST. Run this once with sudo - identically whether Mountie itself is
+# installed natively or as a Flatpak, since a Flatpak sandbox cannot write
+# /usr/share/polkit-1/actions or install a host binary itself. Self-contained
+# on purpose: no sibling files, so this works wherever you got it from (git
+# checkout, a GitHub release, or exported from inside the Flatpak by Mountie
+# itself in Settings). Safe to re-run after a Mountie upgrade changes the
+# wrapper; it always overwrites both files. See docs/native-mount-backend.md
+# for what this actually grants.
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "error: run this with sudo" >&2
+    exit 1
+fi
+
+WRAPPER_DEST="/usr/libexec/mountie-mount-helper"
+POLICY_DEST="/usr/share/polkit-1/actions/io.github.HHuckleberry.Mountie.policy"
+
+case "${1:-install}" in
+    install)
+        ;;
+    --uninstall)
+        rm -f -- "$WRAPPER_DEST" "$POLICY_DEST"
+        echo "Removed $WRAPPER_DEST and $POLICY_DEST."
+        exit 0
+        ;;
+    *)
+        echo "usage: $0 [--uninstall]" >&2
+        exit 2
+        ;;
+esac
+
+if ! command -v pkexec >/dev/null 2>&1; then
+    echo "error: pkexec was not found. Install polkit first" \
+         "(e.g. 'apt install policykit-1' or 'dnf install polkit')" \
+         "and re-run this script." >&2
+    exit 1
+fi
+
+# Not fatal: the wrapper and policy can still be installed ahead of time,
+# but native mounts will fail with a clear error until this is present.
+if ! command -v mount.cifs >/dev/null 2>&1; then
+    echo "warning: mount.cifs was not found. Native SMB/CIFS mounts will fail" \
+         "until cifs-utils is installed" \
+         "(e.g. 'apt install cifs-utils' or 'dnf install cifs-utils')." >&2
+fi
+
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
+
+cat > "$WORKDIR/mountie-mount-helper" <<'MOUNTIE_WRAPPER_EOF'
+#!/usr/bin/python3
+"""Root-owned helper invoked via pkexec to mount/unmount a native CIFS share.
+
+Trust boundary: everything the caller passes is untrusted except PKEXEC_UID,
+which pkexec itself sets and the caller cannot spoof. Every argument is
+validated strictly before mount/umount is ever touched, and both are always
+run with an explicit argument list - never through a shell, and never with a
+string built by interpolation. fstype is hardcoded to cifs and
+mount options are composed entirely here; nothing from the caller reaches
+the -o string except values that have already been validated as safe.
+
+Installed at /usr/libexec/mountie-mount-helper by
+scripts/install-native-mount-helper.sh, and authorized by the polkit action
+in io.github.HHuckleberry.Mountie.policy (installed alongside it - its
+org.freedesktop.policykit.exec.path annotation must match this file's
+installed path exactly, or pkexec will not resolve the action). See
+docs/native-mount-backend.md for the full threat model.
+"""
+
+import os
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+
+MOUNT_BIN = "/usr/bin/mount"
+UMOUNT_BIN = "/usr/bin/umount"
+
+# //host/share[/sub-share...]. Deliberately conservative for v1: plain
+# hostnames/IPv4 only (no IPv6 literals, no port suffix, no internationalized
+# hostnames) - see docs/native-mount-backend.md for why. Never used to build
+# a shell command, but validated anyway as defense in depth.
+SOURCE_RE = re.compile(r"^//[A-Za-z0-9_.-]+(?:/[A-Za-z0-9 _.-]+)+$")
+MAX_SOURCE_LENGTH = 4096
+MAX_CREDENTIALS_SIZE = 64 * 1024
+ROOT_CREDENTIALS_DIR = "/run"
+
+
+def fail(message):
+    print(f"mountie-mount-helper: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def caller_uid():
+    raw = os.environ.get("PKEXEC_UID")
+    if raw is None:
+        fail("must be invoked through pkexec (PKEXEC_UID is not set)")
+    try:
+        return int(raw)
+    except ValueError:
+        fail("PKEXEC_UID is not a valid integer")
+
+
+def require_unc_source(source):
+    if len(source) > MAX_SOURCE_LENGTH or not SOURCE_RE.match(source):
+        fail(f"refusing to mount an invalid source: {source!r}")
+    return source
+
+
+def _require_child_of_base(path_str, uid, label):
+    base = os.path.realpath(f"/run/user/{uid}/mountie")
+    real = os.path.realpath(path_str)
+    if os.path.dirname(real) != base:
+        fail(f"{label} must be a direct child of {base}")
+    return real
+
+
+def _open_no_follow(path, flags, *, dir_fd=None):
+    return os.open(
+        path, flags | getattr(os, "O_NOFOLLOW", 0), dir_fd=dir_fd
+    )
+
+
+def _open_direct_child(path_str, uid, label, flags):
+    real = _require_child_of_base(path_str, uid, label)
+    base = os.path.dirname(real)
+    try:
+        base_fd = _open_no_follow(
+            base, getattr(os, "O_PATH", os.O_RDONLY) | os.O_DIRECTORY
+        )
+    except OSError as error:
+        fail(f"runtime directory is unavailable: {error}")
+    try:
+        base_info = os.fstat(base_fd)
+        if not stat.S_ISDIR(base_info.st_mode) or base_info.st_uid != uid:
+            fail("runtime directory is not owned by the calling user")
+        return _open_no_follow(os.path.basename(real), flags, dir_fd=base_fd), real
+    finally:
+        os.close(base_fd)
+
+
+def require_safe_mountpoint(path_str, uid):
+    try:
+        fd, real = _open_direct_child(
+            path_str, uid, "mountpoint",
+            getattr(os, "O_PATH", os.O_RDONLY) | os.O_DIRECTORY,
+        )
+    except OSError as error:
+        fail(f"mountpoint does not exist: {error}")
+    info = os.fstat(fd)
+    if not stat.S_ISDIR(info.st_mode):
+        os.close(fd)
+        fail("mountpoint must be a directory")
+    if info.st_uid != uid:
+        os.close(fd)
+        fail("mountpoint is not owned by the calling user")
+    return fd, real
+
+
+def require_safe_credentials_file(path_str, uid):
+    try:
+        fd, real = _open_direct_child(
+            path_str, uid, "credentials file", os.O_RDONLY
+        )
+    except OSError as error:
+        fail(f"credentials file does not exist: {error}")
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode):
+        os.close(fd)
+        fail("credentials file must be a regular file")
+    if info.st_uid != uid:
+        os.close(fd)
+        fail("credentials file is not owned by the calling user")
+    if stat.S_IMODE(info.st_mode) != 0o600:
+        os.close(fd)
+        fail("credentials file must be mode 0600")
+    if info.st_size > MAX_CREDENTIALS_SIZE:
+        os.close(fd)
+        fail("credentials file is unexpectedly large")
+    return fd, real
+
+
+def read_safe_credentials(fd):
+    """Validate the mount.cifs credentials grammar without logging values."""
+    os.lseek(fd, 0, os.SEEK_SET)
+    payload = os.read(fd, MAX_CREDENTIALS_SIZE + 1)
+    if len(payload) > MAX_CREDENTIALS_SIZE:
+        fail("credentials file is unexpectedly large")
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        fail("credentials file is not valid UTF-8")
+    if "\0" in text or "\r" in text:
+        fail("credentials file contains invalid control characters")
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    values = {}
+    for line in lines:
+        key, separator, value = line.partition("=")
+        if not separator or key not in {"username", "password", "domain"}:
+            fail("credentials file contains an unsupported field")
+        if key in values:
+            fail("credentials file contains a duplicate field")
+        values[key] = value
+    if "username" not in values or "password" not in values:
+        fail("credentials file is missing a required field")
+    ordered = [f"username={values['username']}"]
+    if "domain" in values:
+        ordered.append(f"domain={values['domain']}")
+    ordered.append(f"password={values['password']}")
+    return ("\n".join(ordered) + "\n").encode("utf-8")
+
+
+def _caller_gid(uid):
+    import pwd
+
+    try:
+        return pwd.getpwuid(uid).pw_gid
+    except KeyError:
+        fail(f"no local user found for uid {uid}")
+
+
+def require_cifs_mount(fd):
+    """Require the opened target to belong to a live CIFS mount."""
+    try:
+        with open(f"/proc/self/fdinfo/{fd}", encoding="utf-8") as handle:
+            mount_id = next(
+                line.split(":", 1)[1].strip()
+                for line in handle
+                if line.startswith("mnt_id:")
+            )
+        with open("/proc/self/mountinfo", encoding="utf-8") as handle:
+            for line in handle:
+                left, separator, right = line.partition(" - ")
+                if separator and left.split()[0] == mount_id:
+                    if right.split()[0] == "cifs":
+                        return
+                    break
+    except (OSError, StopIteration, IndexError):
+        pass
+    fail("mountpoint is not a CIFS mount")
+
+
+def do_mount(args, uid):
+    if len(args) != 3:
+        fail("mount requires exactly 3 arguments: source mountpoint credentials-file")
+    source, mountpoint, credentials = args
+    source = require_unc_source(source)
+    mount_fd, _mountpoint = require_safe_mountpoint(mountpoint, uid)
+    credentials_fd, _credentials = require_safe_credentials_file(credentials, uid)
+    root_credentials = None
+    try:
+        # The caller owns the runtime directory and can rename its children.
+        # Use the already-validated descriptors from this point forward: copy
+        # credentials to a new root-owned file and address the mountpoint via
+        # /proc/self/fd so path replacement cannot change either object.
+        credential_payload = read_safe_credentials(credentials_fd)
+        with tempfile.NamedTemporaryFile(
+            mode="wb", prefix="mountie-credentials-",
+            dir=ROOT_CREDENTIALS_DIR, delete=False,
+        ) as destination:
+            root_credentials = destination.name
+            destination.write(credential_payload)
+        os.chmod(root_credentials, 0o600)
+        gid = _caller_gid(uid)
+        options = (
+            f"credentials={root_credentials},uid={uid},gid={gid},"
+            "file_mode=0600,dir_mode=0700"
+        )
+        target = f"/proc/self/fd/{mount_fd}"
+        result = subprocess.run(
+            [MOUNT_BIN, "-t", "cifs", source, target, "-o", options],
+            pass_fds=(mount_fd,),
+            check=False,
+        )
+        return result.returncode
+    finally:
+        os.close(credentials_fd)
+        os.close(mount_fd)
+        if root_credentials is not None:
+            try:
+                os.unlink(root_credentials)
+            except OSError:
+                pass
+
+
+def do_unmount(args, uid):
+    if len(args) != 1:
+        fail("unmount requires exactly 1 argument: mountpoint")
+    mount_fd, _mountpoint = require_safe_mountpoint(args[0], uid)
+    try:
+        require_cifs_mount(mount_fd)
+        target = f"/proc/self/fd/{mount_fd}"
+        result = subprocess.run(
+            [UMOUNT_BIN, "--", target], pass_fds=(mount_fd,), check=False
+        )
+        return result.returncode
+    finally:
+        os.close(mount_fd)
+
+
+def main(argv):
+    uid = caller_uid()
+    if len(argv) < 2:
+        fail("usage: mountie-mount-helper <mount|unmount> ...")
+    action, rest = argv[1], argv[2:]
+    if action == "mount":
+        return do_mount(rest, uid)
+    elif action == "unmount":
+        return do_unmount(rest, uid)
+    else:
+        fail(f"unknown action: {action!r}")
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
+MOUNTIE_WRAPPER_EOF
+
+cat > "$WORKDIR/io.github.HHuckleberry.Mountie.policy" <<'MOUNTIE_POLICY_EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Mountie</vendor>
+  <vendor_url>https://github.com/HHuckleberry/Mountie</vendor_url>
+
+  <action id="io.github.HHuckleberry.Mountie.mount-helper">
+    <description>Mount or unmount a native network share for Mountie</description>
+    <message>Authentication is required to mount or unmount a native network share</message>
+    <icon_name>io.github.HHuckleberry.Mountie</icon_name>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <!-- auth_admin_keep rather than auth_admin: authenticate once, not on
+           every connect/disconnect/scheduler-fired auto-disconnect. This
+           grants root, scoped to exactly one wrapper below, not a shell. -->
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <!-- Must exactly match the wrapper's installed path (see
+         scripts/install-native-mount-helper.sh), or pkexec will not resolve
+         this action to that program. -->
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/mountie-mount-helper</annotate>
+  </action>
+</policyconfig>
+MOUNTIE_POLICY_EOF
+
+install -Dm755 "$WORKDIR/mountie-mount-helper" "$WRAPPER_DEST"
+install -Dm644 "$WORKDIR/io.github.HHuckleberry.Mountie.policy" "$POLICY_DEST"
+
+echo "Installed $WRAPPER_DEST and $POLICY_DEST."
+echo "Native mount is now available as a per-share option in Mountie (Add Share > Mount using)."

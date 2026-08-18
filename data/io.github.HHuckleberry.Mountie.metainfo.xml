@@ -16,14 +16,16 @@
     <p>
       Mountie keeps your network shares in one place and mounts them with a
       single toggle. It handles SMB/CIFS, AFP, NFS, SFTP, FTP and WebDAV
-      through GVfs. No administrator rights are needed and nothing has to
-      be added to fstab.
+      through GVfs without administrator access or fstab changes. An optional
+      native SMB/CIFS backend uses a separately installed, narrowly scoped
+      privileged helper.
     </p>
     <p>Features:</p>
     <ul>
-      <li>Add, edit and remove shares for any host and protocol GVfs supports</li>
+      <li>Add, discover, import, edit and remove network shares</li>
       <li>Mount and unmount with one click, with status shown for each share</li>
-      <li>Passwords are stored in the system keyring, never on disk in plain text</li>
+      <li>Ask for passwords each time or retain them in the system keyring</li>
+      <li>Optionally use the native kernel CIFS driver for higher SMB throughput</li>
       <li>Each mounted share gets a short, stable path such as ~/Shares/Photos, instead of the long generated GVfs location</li>
       <li>Light and dark themes, following the desktop's own preference and accent color by default</li>
     </ul>
@@ -37,15 +39,15 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/HHuckleberry/Mountie/v0.1.0/data/screenshots/main-window.png</image>
+      <image>https://raw.githubusercontent.com/HHuckleberry/Mountie/v0.4.1/data/screenshots/main-window.png</image>
       <caption>Every configured share with its connection status and local path</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/HHuckleberry/Mountie/v0.1.0/data/screenshots/add-share.png</image>
-      <caption>Adding a share takes a protocol, host, path and optional credentials</caption>
+      <image>https://raw.githubusercontent.com/HHuckleberry/Mountie/v0.4.1/data/screenshots/add-share.png</image>
+      <caption>Configure the protocol, mount backend and network location</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/HHuckleberry/Mountie/v0.1.0/data/screenshots/light-theme.png</image>
+      <image>https://raw.githubusercontent.com/HHuckleberry/Mountie/v0.4.1/data/screenshots/light-theme.png</image>
       <caption>The interface follows your desktop's light or dark preference</caption>
     </screenshot>
   </screenshots>
@@ -75,6 +77,25 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.4.1" date="2026-08-17">
+      <description>
+        <p>Harden and document the native SMB/CIFS mount backend.</p>
+        <ul>
+          <li>Pin validated mountpoints and credentials across privileged operations to prevent path-replacement races</li>
+          <li>Reject injected credential fields and safely quote administrator setup commands</li>
+          <li>Add a native-helper removal workflow and refresh user-facing documentation</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.4.0" date="2026-08-17">
+      <description>
+        <p>Add an opt-in native kernel mount backend for SMB/CIFS shares.</p>
+        <ul>
+          <li>Add a per-share native (mount.cifs) backend as a faster alternative to GVfs, SMB/CIFS only</li>
+          <li>Add a pkexec-authorized privileged helper and a one-time host setup script for native mounts</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.2" date="2026-08-16">
       <description>
         <p>Add Share now offers templates and network discovery from one picker.</p>

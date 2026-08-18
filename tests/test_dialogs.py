@@ -7,8 +7,9 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 from PyQt5 import QtCore, QtWidgets
 
 from mountie.discovery import DiscoveryResult
-from mountie.settings import SHARE_PRESETS
+from mountie.settings import BACKEND_GVFS, BACKEND_NATIVE, SHARE_PRESETS
 from mountie.app.settings import SbomDialog, SettingsDialog
+from mountie.app import settings as app_settings
 from mountie.app.components import (
     DiscoveryCard,
     DiscoveryCredentialsDialog,
@@ -60,6 +61,93 @@ class SettingsDialogTests(unittest.TestCase):
             button.click()
         exec_.assert_called_once()
 
+    def test_native_mount_status_reflects_whether_the_helper_is_installed(self):
+        with mock.patch.object(app_settings.native_mount, "is_helper_installed", return_value=True):
+            installed_dialog = SettingsDialog(0)
+        self.addCleanup(installed_dialog.close)
+        self.assertIn("Installed", installed_dialog.native_status_lbl.text())
+        self.assertTrue(installed_dialog.native_setup_btn.isVisibleTo(installed_dialog))
+        self.assertIn("removal", installed_dialog.native_setup_btn.text())
+
+        with mock.patch.object(app_settings.native_mount, "is_helper_installed", return_value=False):
+            missing_dialog = SettingsDialog(0)
+        self.addCleanup(missing_dialog.close)
+        self.assertIn("Not set up", missing_dialog.native_status_lbl.text())
+        self.assertTrue(missing_dialog.native_setup_btn.isVisibleTo(missing_dialog))
+
+    def test_show_setup_command_exports_and_displays_the_sudo_command(self):
+        with mock.patch.object(app_settings.native_mount, "is_helper_installed", return_value=False):
+            dialog = SettingsDialog(0)
+        self.addCleanup(dialog.close)
+        with mock.patch.object(
+            app_settings.native_mount, "export_installer_for_host",
+            return_value=(mock.Mock(), "/home/alice/.var/app/io.github.HHuckleberry.Mountie/data/mountie/install-native-mount-helper.sh"),
+        ) as export:
+            dialog.native_setup_btn.click()
+        export.assert_called_once()
+        self.assertEqual(
+            dialog.native_command_edit.text(),
+            "sudo bash -- /home/alice/.var/app/io.github.HHuckleberry.Mountie/data/mountie/install-native-mount-helper.sh",
+        )
+        self.assertTrue(dialog.native_command_edit.isVisibleTo(dialog))
+        self.assertTrue(dialog.native_copy_btn.isVisibleTo(dialog))
+        self.assertFalse(dialog.native_setup_btn.isVisibleTo(dialog))
+
+    def test_show_setup_command_reports_export_failure_without_crashing(self):
+        with mock.patch.object(app_settings.native_mount, "is_helper_installed", return_value=False):
+            dialog = SettingsDialog(0)
+        self.addCleanup(dialog.close)
+        with mock.patch.object(
+            app_settings.native_mount, "export_installer_for_host",
+            side_effect=OSError("permission denied"),
+        ), mock.patch.object(QtWidgets.QMessageBox, "critical") as critical:
+            dialog.native_setup_btn.click()
+        critical.assert_called_once()
+        self.assertFalse(dialog.native_command_edit.isVisibleTo(dialog))
+
+    def test_copy_button_puts_the_command_on_the_clipboard(self):
+        with mock.patch.object(app_settings.native_mount, "is_helper_installed", return_value=False):
+            dialog = SettingsDialog(0)
+        self.addCleanup(dialog.close)
+        with mock.patch.object(
+            app_settings.native_mount, "export_installer_for_host",
+            return_value=(mock.Mock(), "/tmp/install-native-mount-helper.sh"),
+        ):
+            dialog.native_setup_btn.click()
+        dialog.native_copy_btn.click()
+        self.assertEqual(
+            QtWidgets.QApplication.clipboard().text(),
+            "sudo bash -- /tmp/install-native-mount-helper.sh",
+        )
+
+    def test_setup_command_shell_quotes_the_exported_path(self):
+        with mock.patch.object(app_settings.native_mount, "is_helper_installed", return_value=False):
+            dialog = SettingsDialog(0)
+        self.addCleanup(dialog.close)
+        with mock.patch.object(
+            app_settings.native_mount, "export_installer_for_host",
+            return_value=(mock.Mock(), "/tmp/data; touch owned/installer.sh"),
+        ):
+            dialog.native_setup_btn.click()
+        self.assertEqual(
+            dialog.native_command_edit.text(),
+            "sudo bash -- '/tmp/data; touch owned/installer.sh'",
+        )
+
+    def test_installed_helper_offers_an_uninstall_command(self):
+        with mock.patch.object(app_settings.native_mount, "is_helper_installed", return_value=True):
+            dialog = SettingsDialog(0)
+        self.addCleanup(dialog.close)
+        with mock.patch.object(
+            app_settings.native_mount, "export_installer_for_host",
+            return_value=(mock.Mock(), "/tmp/install-native-mount-helper.sh"),
+        ):
+            dialog.native_setup_btn.click()
+        self.assertEqual(
+            dialog.native_command_edit.text(),
+            "sudo bash -- /tmp/install-native-mount-helper.sh --uninstall",
+        )
+
 
 class SbomDialogTests(unittest.TestCase):
     @classmethod
@@ -104,6 +192,33 @@ class ShareDialogLayoutTests(unittest.TestCase):
             self.assertIsNone(dialog.discovery_panel)
             tabs = dialog.findChild(QtWidgets.QTabWidget, "shareSettingsTabs")
             self.assertNotIn("Discover", [tabs.tabText(i) for i in range(tabs.count())])
+
+    def test_backend_combo_defaults_to_gvfs_and_is_enabled_for_smb(self):
+        dialog = ShareDialog(global_credential_policy="ask")
+        self.addCleanup(dialog.close)
+        self.assertEqual(dialog.backend_combo.currentData(), BACKEND_GVFS)
+        self.assertTrue(dialog.backend_combo.isEnabled())
+
+    def test_backend_combo_is_disabled_and_reset_for_non_smb_protocol(self):
+        dialog = ShareDialog(
+            existing={
+                "label": "Share", "host": "server", "share": "data",
+                "protocol": "smb", "backend": BACKEND_NATIVE,
+            },
+            global_credential_policy="ask",
+        )
+        self.addCleanup(dialog.close)
+        self.assertEqual(dialog.backend_combo.currentData(), BACKEND_NATIVE)
+        dialog.protocol_combo.setCurrentIndex(dialog.protocol_combo.findData("nfs"))
+        self.assertEqual(dialog.backend_combo.currentData(), BACKEND_GVFS)
+        self.assertFalse(dialog.backend_combo.isEnabled())
+
+    def test_values_includes_backend(self):
+        dialog = ShareDialog(global_credential_policy="ask")
+        self.addCleanup(dialog.close)
+        dialog.backend_combo.setCurrentIndex(dialog.backend_combo.findData(BACKEND_NATIVE))
+        values, _password = dialog.values()
+        self.assertEqual(values["backend"], BACKEND_NATIVE)
 
     def test_discovery_password_is_transiently_prefilled(self):
         dialog = ShareDialog(

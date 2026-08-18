@@ -9,7 +9,14 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
-from mountie.settings import DEFAULT_LINK_DIR, DEFAULT_PROTOCOL, PROTOCOLS
+from mountie import native_mount
+from mountie.settings import (
+    BACKEND_NATIVE,
+    DEFAULT_BACKEND,
+    DEFAULT_LINK_DIR,
+    DEFAULT_PROTOCOL,
+    PROTOCOLS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +116,11 @@ def validate_share(config):
         return "A share name or path is required."
     if config.get("protocol", DEFAULT_PROTOCOL) not in dict(PROTOCOLS):
         return "The selected protocol is not supported."
+    if (
+        config.get("backend", DEFAULT_BACKEND) == BACKEND_NATIVE
+        and config.get("protocol", DEFAULT_PROTOCOL) != "smb"
+    ):
+        return "Native mount only supports the SMB/CIFS protocol."
     try:
         _uri_host(host)
     except (UnicodeError, ValueError) as error:
@@ -177,7 +189,9 @@ def link_name_collision(config, candidate, exclude_id=None):
 
 
 def local_path(share):
-    """Return the path where GVfs mounted a share, or None."""
+    """Return the path where a share is mounted, or None."""
+    if share.get("backend", DEFAULT_BACKEND) == BACKEND_NATIVE:
+        return native_mount.local_path(share)
     try:
         mount = Gio.File.new_for_uri(share_uri(share)).find_enclosing_mount(None)
     except (GLib.Error, ValueError):
@@ -278,6 +292,8 @@ class CredMountOperation(Gio.MountOperation):
 
 
 def is_mounted(config):
+    if config.get("backend", DEFAULT_BACKEND) == BACKEND_NATIVE:
+        return native_mount.is_mounted(config)
     try:
         gfile = Gio.File.new_for_uri(share_uri(config))
         gfile.find_enclosing_mount(None)
@@ -318,6 +334,13 @@ def classify_mount_error(error):
 
 def mount_share(config, password, on_done):
     """Mount a share and report (success, status, error_message)."""
+    if config.get("backend", DEFAULT_BACKEND) == BACKEND_NATIVE:
+        validation_error = validate_share(config)
+        if validation_error:
+            on_done(False, "invalid share", f"Invalid share: {validation_error}")
+            return
+        native_mount.mount_share(config, password, on_done)
+        return
     try:
         gfile = Gio.File.new_for_uri(share_uri(config))
     except ValueError as error:
@@ -351,6 +374,9 @@ def mount_share(config, password, on_done):
 
 
 def unmount_share(config, on_done):
+    if config.get("backend", DEFAULT_BACKEND) == BACKEND_NATIVE:
+        native_mount.unmount_share(config, on_done)
+        return
     try:
         gfile = Gio.File.new_for_uri(share_uri(config))
         mount = gfile.find_enclosing_mount(None)

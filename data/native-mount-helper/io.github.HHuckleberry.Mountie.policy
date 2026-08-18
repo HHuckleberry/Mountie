@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Mountie</vendor>
+  <vendor_url>https://github.com/HHuckleberry/Mountie</vendor_url>
+
+  <action id="io.github.HHuckleberry.Mountie.mount-helper">
+    <description>Mount or unmount a native network share for Mountie</description>
+    <message>Authentication is required to mount or unmount a native network share</message>
+    <icon_name>io.github.HHuckleberry.Mountie</icon_name>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <!-- auth_admin_keep rather than auth_admin: authenticate once, not on
+           every connect/disconnect/scheduler-fired auto-disconnect. This
+           grants root, scoped to exactly one wrapper below, not a shell. -->
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <!-- Must exactly match the wrapper's installed path (see
+         scripts/install-native-mount-helper.sh), or pkexec will not resolve
+         this action to that program. -->
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/mountie-mount-helper</annotate>
+  </action>
+</policyconfig>

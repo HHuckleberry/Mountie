@@ -6,8 +6,11 @@ from pathlib import Path
 from PyQt5 import QtCore, QtWidgets
 
 from mountie.settings import (
+    BACKEND_GVFS,
+    BACKENDS,
     CREDENTIAL_POLICIES,
     CREDENTIAL_USE_GLOBAL,
+    DEFAULT_BACKEND,
     DEFAULT_PROTOCOL,
     DISCONNECT_OPTIONS,
     PROTOCOLS,
@@ -31,8 +34,8 @@ class ShareDialog(QtWidgets.QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle("Edit Share" if existing else "Add Share")
-        self.resize(560, 500)
-        self.setMinimumSize(520, 450)
+        self.resize(560, 570)
+        self.setMinimumSize(520, 520)
         self.existing = existing
         source = existing or initial or {}
         self.credential_profiles = credential_profiles or []
@@ -59,6 +62,13 @@ class ShareDialog(QtWidgets.QDialog):
             self.protocol_combo.addItem(label, key)
         current_protocol = source.get("protocol", DEFAULT_PROTOCOL)
         self.protocol_combo.setCurrentIndex(max(0, self.protocol_combo.findData(current_protocol)))
+
+        self.backend_combo = QtWidgets.QComboBox()
+        for key, label in BACKENDS:
+            self.backend_combo.addItem(label, key)
+        current_backend = source.get("backend", DEFAULT_BACKEND)
+        self.backend_combo.setCurrentIndex(max(0, self.backend_combo.findData(current_backend)))
+        self.protocol_combo.currentIndexChanged.connect(self._update_backend_availability)
 
         self.label_edit = QtWidgets.QLineEdit(source.get("label", ""))
         self.host_edit = QtWidgets.QLineEdit(source.get("host", default_host))
@@ -120,6 +130,7 @@ class ShareDialog(QtWidgets.QDialog):
         if self.template_combo is not None:
             connection.addRow("Start from:", self.template_combo)
         connection.addRow("Protocol:", self.protocol_combo)
+        connection.addRow("Mount using:", self.backend_combo)
         connection.addRow("Display name:", self.label_edit)
         connection.addRow("Server:", self.host_edit)
         connection.addRow("Share or path:", self.share_edit)
@@ -129,7 +140,16 @@ class ShareDialog(QtWidgets.QDialog):
         connection_hint.setObjectName("settingsHint")
         connection_hint.setWordWrap(True)
         connection.addRow("", connection_hint)
+        backend_hint = QtWidgets.QLabel(
+            "Native kernel mount (SMB/CIFS only) can improve throughput on large "
+            "transfers, but requires one-time host setup and a system "
+            "authentication prompt. See the README for setup steps."
+        )
+        backend_hint.setObjectName("settingsHint")
+        backend_hint.setWordWrap(True)
+        connection.addRow("", backend_hint)
         tabs.addTab(connection_page, "Connection")
+        self._update_backend_availability()
 
         self.discovery_panel = None
         if is_blank_add:
@@ -192,6 +212,7 @@ class ShareDialog(QtWidgets.QDialog):
     def values(self):
         return {
             "protocol": self.protocol_combo.currentData(),
+            "backend": self.backend_combo.currentData(),
             "label": self.label_edit.text().strip(),
             "host": self.host_edit.text().strip(),
             "share": self.share_edit.text().strip(),
@@ -204,6 +225,16 @@ class ShareDialog(QtWidgets.QDialog):
             "disconnect_on_suspend": self.disconnect_on_suspend.isChecked(),
             "_new_profile_name": self.new_profile_name.text().strip(),
         }, self.pass_edit.text()
+
+    def _update_backend_availability(self):
+        # Native mount only supports SMB/CIFS (mounts.validate_share and
+        # settings._read_config both enforce this too); snap back to gvfs
+        # rather than let the field silently hold a value that would fail
+        # validation on save.
+        is_smb = self.protocol_combo.currentData() == "smb"
+        if not is_smb and self.backend_combo.currentData() != BACKEND_GVFS:
+            self.backend_combo.setCurrentIndex(self.backend_combo.findData(BACKEND_GVFS))
+        self.backend_combo.setEnabled(is_smb)
 
     def _template_changed(self):
         key = self.template_combo.currentData()

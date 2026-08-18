@@ -79,6 +79,19 @@ finish-args:
   - --talk-name=org.freedesktop.secrets
   - --talk-name=org.freedesktop.ScreenSaver
   - --system-talk-name=org.freedesktop.login1
+  # Native (opt-in, per-share) kernel CIFS mounts require running a
+  # root-owned helper on the host via pkexec; there is no portal for this
+  # and the sandbox cannot invoke privileged host commands directly, so
+  # flatpak-spawn --host is the only path to the host's pkexec. The
+  # one-time host setup that installs the pkexec policy and helper itself
+  # is scripts/install-native-mount-helper.sh, run manually with sudo.
+  - --talk-name=org.freedesktop.Flatpak
+  # The mountpoint directory and the transient credentials file the native
+  # backend creates both live under /run/user/<uid>/mountie. The host-side
+  # helper above validates and mounts onto that exact host path, so the
+  # sandboxed process needs to see the real host directory here too, not
+  # its own private runtime-dir view - same reasoning as xdg-run/gvfs above.
+  - --filesystem=xdg-run/mountie
   # Read-only access lets the first Flatpak run migrate shares from a prior
   # native installation. New writes use Flatpak's persistent XDG config dir.
   - --filesystem=~/.config/mountie:ro
@@ -316,6 +329,14 @@ modules:
           ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/io.github.HHuckleberry.Mountie.svg
       - install -Dm644 data/io.github.HHuckleberry.Mountie.metainfo.xml
           ${FLATPAK_DEST}/share/metainfo/io.github.HHuckleberry.Mountie.metainfo.xml
+      # Bundled so Settings can offer native-mount setup without network
+      # access: a Flatpak build has no access to the surrounding git repo on
+      # the host, so this is the only copy of the installer a Flatpak-only
+      # user has. mountie/native_mount.py's export_installer_for_host()
+      # reads it from this exact path and writes it out to a host-visible
+      # location the user can run with sudo.
+      - install -Dm755 scripts/install-native-mount-helper.sh
+          ${FLATPAK_DEST}/share/mountie/install-native-mount-helper.sh
     sources:
       # Pinned to a tag AND its commit, not just the tag - GitHub's
       # auto-generated tarball checksums have changed on GitHub's end before
